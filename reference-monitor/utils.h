@@ -1,0 +1,1 @@
+char *get_pwd_encrypted(char *pwd);

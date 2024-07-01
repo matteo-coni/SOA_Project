@@ -1,5 +1,5 @@
 obj-m += reference_monitor.o
-the_rm-objs := reference_monitor.o
+the_rm-objs += reference_monitor.o utils.o
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

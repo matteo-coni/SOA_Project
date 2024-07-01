@@ -17,6 +17,7 @@
 */
 
 #define EXPORT_SYMTAB
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/cdev.h>
@@ -24,12 +25,14 @@
 #include <linux/unistd.h>
 
 
-#include "../reference_monitor.h"
-
+#include "reference_monitor.h"
+#include "utils.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Matteo Coni");
 MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
+
+struct reference_monitor reference_monitor;
 
 char password[PWD_LEN];
 module_param_string(password, password, PWD_LEN, 0);
@@ -37,6 +40,26 @@ module_param_string(password, password, PWD_LEN, 0);
 /* syscall table base address */
 unsigned long the_syscall_table = 0x0;
 module_param(the_syscall_table, ulong, 0660);
+
+char *get_pwd_encrypted(char *pwd);
+
+
+
+int ref_monitor_initialize(void){
+    if(!password || strlen(password)==0){
+        printk("%s, no pwd reference monitor\n");
+        return -1;
+    }
+
+    reference_monitor.state = 0; //State 0 == OFF
+
+    INIT_LIST_HEAD(&reference_monitor.protected_paths);
+    spin_lock_init(&reference_monitor.rf_lock);
+
+
+
+    return 0;
+}
 
 
 int init_module(void) {
@@ -49,10 +72,8 @@ int init_module(void) {
                 return ret;
         }
 
-    reference_monitor.state = 0;
-
-    INIT_LIST_HEAD(&reference_monitor.protected_paths)
-
+    pwd_encrypted = get_pwd_encrypted(password);
+    reference_monitor.password = pwd_encrypted;
     
     return 0;
     
@@ -62,5 +83,5 @@ int init_module(void) {
 void cleanup_module(void) {
 
    
-        
+    return;
 }
