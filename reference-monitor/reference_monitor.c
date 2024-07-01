@@ -9,7 +9,7 @@
 * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 * A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 *  
-* @brief This is the main source for a kernel level reference monitor
+* @brief Reference Monitor implementation for file protection
 *
 * @author Matteo Coni
 *
@@ -24,16 +24,35 @@
 #include <linux/unistd.h>
 
 
-#include "../reference-monitor.h"
+#include "../reference_monitor.h"
 
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Matteo Coni");
 MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
+char password[PWD_LEN];
+module_param_string(password, password, PWD_LEN, 0);
+
+/* syscall table base address */
+unsigned long the_syscall_table = 0x0;
+module_param(the_syscall_table, ulong, 0660);
 
 
 int init_module(void) {
+
+    int ret;
+    char *pwd_encrypted;
+
+    ret = ref_monitor_initialize();
+    if (ret != 0) {
+                return ret;
+        }
+
+    reference_monitor.state = 0;
+
+    INIT_LIST_HEAD(&reference_monitor.protected_paths)
+
     
     return 0;
     
