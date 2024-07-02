@@ -15,7 +15,10 @@
                 "/lib/modules/5.15.0-113-generic/build/arch/x86/include/uapi",
                 "/lib/modules/5.15.0-113-generic/build/arch/x86/include/generated/uapi"
             ],
-            "defines": [],
+            "defines": [
+                "__KERNEL__",
+                "MODULE"
+            ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c17",
             "cppStandard": "c++98",

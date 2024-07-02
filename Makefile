@@ -14,7 +14,7 @@ mount:
 
 unmount:
 	sudo rmmod the_usctm
-	sudo rmmod reference_monitor
+	sudo rmmod the_reference_monitor
 
 
 #obj-m += reference_monitor.o

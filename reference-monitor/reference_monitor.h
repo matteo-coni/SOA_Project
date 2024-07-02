@@ -21,6 +21,5 @@ struct reference_monitor{
     //aggiungi list blackist file e dir
 };
 
-//extern char* get_pwd_encrypted(const char *pwd);
 
 #endif // REFERENCE_MONITOR_H
