@@ -1,3 +1,6 @@
+#ifndef REFERENCE_MONITOR_H
+#define REFERENCE_MONITOR_H
+
 #define PWD_LEN 32
 
 #include <linux/init.h>
@@ -6,6 +9,8 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include "linux/spinlock.h"
+
+#include "utils.h"
 
 
 struct reference_monitor{
@@ -16,4 +21,6 @@ struct reference_monitor{
     //aggiungi list blackist file e dir
 };
 
-//char *get_pwd_encrypted(char *pwd);
+//extern char* get_pwd_encrypted(const char *pwd);
+
+#endif // REFERENCE_MONITOR_H

@@ -39,10 +39,9 @@ module_param_string(password, password, PWD_LEN, 0);
 
 /* syscall table base address */
 unsigned long the_syscall_table = 0x0;
-module_param(the_syscall_table, ulong, 0660);
+//module_param(the_syscall_table, ulong, 0660);
 
-char *get_pwd_encrypted(char *pwd);
-
+//char *get_pwd_encrypted(char *pwd);
 
 
 int ref_monitor_initialize(void){
