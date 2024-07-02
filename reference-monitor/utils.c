@@ -14,15 +14,6 @@ int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
     int ret = 0;
     struct crypto_shash *alg;
     struct shash_desc *desc;
-    char *hash;
-    
-
-    // Allocate memory for the hash buffer
-    hash = kmalloc(HASH_MAX_DIGESTSIZE , GFP_ATOMIC);
-    if (!hash) {
-        printk(KERN_ERR "Failed to allocate hash buffer\n");
-        return -ENOMEM;
-    }
     
     /* Cipher handle for a message digest. 
 	The returned struct crypto_shash is the cipher 
@@ -38,6 +29,7 @@ int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
     desc = kmalloc(sizeof(struct shash_desc) + crypto_shash_descsize(alg), GFP_ATOMIC);
     if (!desc) {
         printk(KERN_ERR "Failed to allocate shash descriptor\n");
+        crypto_free_shash(alg);
         return -ENOMEM; //memory error
         
     }
@@ -45,22 +37,15 @@ int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
     desc->tfm = alg;
 
 	ret = crypto_shash_digest(desc, pwd_input, len_pwd, output_hash);
-    if(ret < 0){
+    if(ret){
         printk(KERN_ERR "Error during digest computation\n");
         return -EFAULT;
-    }
-
-    // Copy the hash to the output buffer in hexadecimal format
-    for (i = 0; i < crypto_shash_digestsize(alg); i++) {
-        snprintf(output_hash + (i * 2), 3, "%02x", (unsigned int)hash[i] & 0xFF);
     }
 
     if(desc)
         kfree(desc);
     if(alg)
         crypto_free_shash(alg);
-    if(hash)
-        kfree(hash);
 
     return ret;
 }
@@ -68,11 +53,36 @@ int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
 
 char* get_pwd_encrypted(const char *pwd) {
     // dummy
-    printk(KERN_INFO "prova encryption");
+    printk(KERN_INFO "prova encryption pwd = %s", pwd);
 
+    int i;
     char *pwd_hash;
-    do_sha256(pwd, strlen(pwd), pwd_hash);
-    return pwd_hash; // 
+    int hash_len = SHA256_DIGEST_SIZE;
+
+    // Allocate memory for the hash output
+    pwd_hash = kmalloc(hash_len * 2 + 1, GFP_KERNEL); // +1 for null terminator
+    if (!pwd_hash) {
+        printk(KERN_ERR "Failed to allocate memory for password hash\n");
+        return NULL;
+    }
+
+    char hash[SHA256_DIGEST_SIZE]; //come buffer per il ritorno
+    if (do_sha256(pwd, strlen(pwd), hash)) {
+        kfree(pwd_hash);
+        return NULL;
+    }
+
+    // Convert the hash to a hexadecimal string
+    for (i = 0; i < SHA256_DIGEST_SIZE; i++) {
+        snprintf(pwd_hash + (i * 2), 3, "%02x", (unsigned int)hash[i] & 0xFF);
+    }
+    pwd_hash[hash_len * 2] = '\0'; // null terminator
+
+    printk(KERN_INFO "pwd encrypted = %s", pwd_hash);
+    printk(KERN_INFO "pwd_hash_global address = %px", (void*)pwd_hash);
+    //qui ok ma verifica return pwd
+
+    return pwd_hash;
 }
 
 EXPORT_SYMBOL(get_pwd_encrypted); 

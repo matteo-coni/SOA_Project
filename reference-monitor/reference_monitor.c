@@ -29,17 +29,6 @@ MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
 struct reference_monitor reference_monitor;
 
-/* password param for reference monitor
-static char *password;
-module_param(password, charp, 0000);
-MODULE_PARM_DESC(password, "Password for the reference monitor");
-
-/* syscall table base address 
-static unsigned long the_syscall_table;
-module_param(the_syscall_table, ulong, 0644);
-MODULE_PARM_DESC(the_syscall_table, "Syscall table base address");
-*/
-
 static long the_syscall_table = 0x0;
 module_param(the_syscall_table, ulong, 0644);
 MODULE_PARM_DESC(sys_call_table, "Syscall_table address parameter"); //modifica desc
@@ -66,35 +55,10 @@ int ref_monitor_initialize(void){
 }
 
 
-/*int init_module(void) {
-
-    int ret;
-    char *pwd_encrypted;
-
-    
-
-    ret = ref_monitor_initialize();
-    if (ret != 0) {
-                return ret;
-        }
-
-    pwd_encrypted = get_pwd_encrypted(password);
-    if (!pwd_encrypted) {
-        printk(KERN_ERR "Failed to encrypt password\n");
-        return -ENOMEM;
-    }
-    
-    reference_monitor.password = pwd_encrypted;
-    
-    printk(KERN_INFO "Reference monitor initialized successfully\n");
-    
-    return 0;
-    
-}*/
 
 int init_module(void) {
     int ret;
-    char *pwd_encrypted;
+    char *pwd_encrypted = NULL;;
 
     printk(KERN_INFO "Initializing reference monitor\n");
     printk(KERN_INFO "Syscall table address: 0x%lx\n", the_syscall_table);
@@ -110,14 +74,15 @@ int init_module(void) {
         return -1;
     }
 
-    pwd_encrypted = get_pwd_encrypted(password);
+    pwd_encrypted = get_pwd_encrypted(password); //funzione ok ma non ritorna correttammente il valore
     if (!pwd_encrypted) {
         printk(KERN_ERR "Failed to encrypt password\n");
         return -ENOMEM;
     }
     
     reference_monitor.password = pwd_encrypted;
-    printk(KERN_INFO "pwd_encrypted = \n", pwd_encrypted);
+    printk(KERN_INFO "pwd_encrypted ref monitor = \n", reference_monitor.password);
+    printk(KERN_INFO "reference_monitor.password address = %px", (void*)reference_monitor.password);
     
     printk(KERN_INFO "Reference monitor initialized successfully\n");
     
@@ -126,6 +91,7 @@ int init_module(void) {
 
 
 void cleanup_module(void) {
+
 
     //dummy
    
