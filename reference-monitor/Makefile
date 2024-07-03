@@ -9,7 +9,7 @@ clean:
 
 mount: 
 	@read -p "Select a password: " password; \
-	sudo insmod the_reference_monitor.ko the_syscall_table=$$(sudo cat /sys/module/the_usctm/parameters/sys_call_table_address) password="$$password"
+	sudo insmod the_reference_monitor.ko syscall_table_addr=$$(sudo cat /sys/module/the_usctm/parameters/sys_call_table_address) free_entries=$$(sudo cat /sys/module/the_usctm/parameters/free_entries) password="$$password"
 
 #@stty -echo
 #@read -p "Select a password: " password; echo
