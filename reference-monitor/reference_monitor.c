@@ -80,10 +80,10 @@ int init_module(void) {
         return -ENOMEM;
     }
     
-    reference_monitor.password = pwd_encrypted;
-    printk(KERN_INFO "pwd_encrypted ref monitor = \n", reference_monitor.password);
-    printk(KERN_INFO "reference_monitor.password address = %px", (void*)reference_monitor.password);
     
+    reference_monitor.password = pwd_encrypted;    
+    printk(KERN_INFO "pwd_encrypted ref monitor = %s\n", reference_monitor.password); //pwd ok
+
     printk(KERN_INFO "Reference monitor initialized successfully\n");
     
     return 0;
