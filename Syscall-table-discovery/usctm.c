@@ -164,25 +164,6 @@ int free_entries[MAX_FREE];
 module_param_array(free_entries,int,NULL,0660);//default array size already known - here we expose what entries are free
 
 
-#define SYS_CALL_INSTALL
-
-#ifdef SYS_CALL_INSTALL
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(2, _trial, unsigned long, A, unsigned long, B){
-#else
-asmlinkage long sys_trial(unsigned long A, unsigned long B){
-#endif
-
-        printk("%s: thread %d requests a trial sys_call with %lu and %lu as parameters\n",MODNAME,current->pid,A,B);
-
-        return 0;
-
-}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-static unsigned long sys_trial = (unsigned long) __x64_sys_trial;	
-#else
-#endif
 
 unsigned long cr0;
 
@@ -209,8 +190,6 @@ unprotect_memory(void)
     write_cr0_forced(cr0 & ~X86_CR0_WP);
 }
 
-#else
-#endif
 
 
 
@@ -235,30 +214,14 @@ int init_module(void) {
 			if(j>=MAX_FREE) break;
 		}
 
-#ifdef SYS_CALL_INSTALL
-	cr0 = read_cr0();
-        unprotect_memory();
-        hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)sys_trial;
-        protect_memory();
-	printk("%s: a sys_call with 2 parameters has been installed as a trial on the sys_call_table at displacement %d\n",MODNAME,FIRST_NI_SYSCALL);	
-#else
-#endif
+    printk("%s: module correctly mounted\n",MODNAME);
 
-        printk("%s: module correctly mounted\n",MODNAME);
-
-        return 0;
+    return 0;
 
 }
 
 void cleanup_module(void) {
                 
-#ifdef SYS_CALL_INSTALL
-	cr0 = read_cr0();
-        unprotect_memory();
-        hacked_syscall_tbl[FIRST_NI_SYSCALL] = (unsigned long*)hacked_ni_syscall;
-        protect_memory();
-#else
-#endif
         printk("%s: shutting down\n",MODNAME);
         
 }
