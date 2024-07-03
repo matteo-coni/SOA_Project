@@ -29,10 +29,14 @@ MODULE_AUTHOR("Matteo Coni");
 MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
 struct reference_monitor reference_monitor;
+unsigned long cr0;
+//unsigned long *hacked_ni_syscall=NULL;
+//unsigned long **hacked_syscall_tbl=NULL;
+unsigned long *nisyscall; //prova
 
 static long syscall_table_addr = 0x0;
 module_param(syscall_table_addr, ulong, 0644);
-MODULE_PARM_DESC(sys_call_table, "Syscall_table address parameter"); //modifica desc
+MODULE_PARM_DESC(syscall_table_addr, "Syscall_table address parameter"); //modifica desc
 
 static char *password = NULL;
 module_param(password, charp, 0000);
@@ -99,9 +103,29 @@ long sys_print_protected_paths = (unsigned long) __x64_sys_print_protected_paths
 #else
 #endif
 
+static inline void write_cr0_forced(unsigned long val)
+{
+    unsigned long __force_order;
 
+    /* __asm__ __volatile__( */
+    asm volatile(
+        "mov %0, %%cr0"
+        : "+r"(val), "+m"(__force_order));
+}
+
+static inline void protect_memory(void)
+{
+    write_cr0_forced(cr0);
+}
+
+static inline void unprotect_memory(void)
+{
+    write_cr0_forced(cr0 & ~X86_CR0_WP);
+}
 
 int inizialize_syscall(void){
+
+    unsigned long ** sys_call_table_hacked;
 
     if(syscall_table_addr == 0x0){
         printk("%s: Syscall table address = 0x0", MODNAME);
@@ -117,16 +141,23 @@ int inizialize_syscall(void){
     - print_protected_paths
     */
     
-    new_sys_call_array[0] = (unsigned long)sys_switch_state;
-    new_sys_call_array[1] = (unsigned long)sys_add_protected_paths;
-    new_sys_call_array[2] = (unsigned long)sys_rm_protected_paths;
-    new_sys_call_array[3] = (unsigned long)sys_print_protected_paths;
+     /* INSTALL NEW SYSCALL */
+    cr0 = read_cr0();
+    unprotect_memory();
+    sys_call_table_hacked = (void*) syscall_table_addr;
+    nisyscall = sys_call_table_hacked[free_entries[0]]; // for cleanup
+    sys_call_table_hacked[free_entries[0]] = (unsigned long*)sys_switch_state;
+    sys_call_table_hacked[free_entries[1]] = (unsigned long*)sys_add_protected_paths;
+    sys_call_table_hacked[free_entries[2]] = (unsigned long*)sys_rm_protected_paths;
+    sys_call_table_hacked[free_entries[3]] = (unsigned long*)sys_print_protected_paths;
+    protect_memory();
 
-    printk(KERN_INFO "Free entries syscall = ???");
+    /*printk(KERN_INFO "Free entries syscall = ???");
     int i;
     for(i=0; i<15; i++){
         printk(KERN_INFO "Free entries syscall array[%d] = %d\n", i, free_entries[i]);
-    }
+    }*/
+
 
     return 0;
 }
