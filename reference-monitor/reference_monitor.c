@@ -30,9 +30,8 @@ MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
 struct reference_monitor reference_monitor;
 unsigned long cr0;
-//unsigned long *hacked_ni_syscall=NULL;
-//unsigned long **hacked_syscall_tbl=NULL;
-unsigned long *nisyscall; //prova
+
+unsigned long *hack_ni_syscall; //prova
 
 static long syscall_table_addr = 0x0;
 module_param(syscall_table_addr, ulong, 0644);
@@ -49,14 +48,117 @@ MODULE_PARM_DESC(free_entries, "Free entry of syscall table");
 unsigned long sys_ni_syscall_address;
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0, 0x0, 0x0};
 
-/* system call switch_state reference monitor*/
+ino_t get_inode_from_path(const char *path){
+
+    struct path file_path;
+    int ret;
+    ino_t inode;
+
+    ret = kern_path(path, LOOKUP_FOLLOW, &file_path);
+    if (ret){
+        printk("%s: Erro during get kernel path from path");
+        return -EINVAL;
+    }
+    // ottieni info sull'inode
+    inode = file_path.dentry->d_inode->i_ino;
+    
+    path_put(&file_path);
+
+    return inode;
+}
+
+
+int file_in_protected_paths_list(char *filename_path){
+
+    int ret = 0;
+    struct protected_paths_entry *entry, *tmp;
+    ino_t inode_number;
+    inode_number = get_inode_from_path(filename_path); //funzione oppure 
+    if (inode_number == 0)
+        //not valid path
+        return 0;
+
+    rcu_read_lock();
+    list_for_each_entry_safe(entry, tmp, &reference_monitor.protected_paths, list){
+        if (entry->inode_n == inode_number) {
+            ret = 1;
+            goto exit;       
+        }
+    }
+exit:
+    rcu_read_unlock();
+
+    // path isn't in protected_paths lists
+
+    return ret;
+}
+
+/* system call SWITCH_STATE reference monitor */
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2,_switch_state, enum State, state, char* , password){
 #else
 asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
 #endif
 
-    //dummy: implementa la system call per lo switch dello stato
+    char* kernel_pwd;
+
+    /* check if user is root EUID 0 */
+    if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
+        printk(KERN_INFO "Only root user can change the status");
+        return -EPERM;
+    }
+
+    /* kmalloc pwd in kernel space */
+    kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
+	if (!kernel_pwd){
+		printk("%s: Error kernel password allocation", MODNAME);
+        	return -ENOMEM; 
+		}
+			
+	// Copy pwd from user space
+	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
+		printk("%s: Error during password copy from user",MODNAME);
+		kfree(kernel_pwd);
+		return -EFAULT;
+	}
+    /* check if insert pwd is valid */
+    if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
+        printk("%s: Invalid password, change state not allowed", MODNAME);
+        kfree(kernel_pwd);
+        return -EACCES;
+    }
+
+    kfree(kernel_pwd);
+
+    spin_lock(&reference_monitor.rf_lock);
+
+    switch(state)
+    {
+        case OFF:
+            reference_monitor.state = OFF;
+            printk("%s: Switching rm state to OFF", MODNAME);
+            break;
+        case ON:
+            reference_monitor.state = ON;
+            printk("%s: Switching rm state to ON", MODNAME);
+            break;
+        case REC_OFF:
+            reference_monitor.state = REC_OFF;
+            printk("%s: Switching rm state to REC_OFF", MODNAME);
+            break;
+        case REC_ON:
+            reference_monitor.state = REC_ON;
+            printk("%s: Switching rm state to REC_ON", MODNAME);
+            break;
+        default:
+            printk("%s: Invalid state, switching rm not allowed", MODNAME);
+            spin_unlock(&reference_monitor.rf_lock);
+            return -EINVAL;
+    }
+
+    spin_unlock(&reference_monitor.rf_lock);
+
     return 0; //ok
 }
 
@@ -66,7 +168,62 @@ __SYSCALL_DEFINEx(2, _add_protected_paths, char *, path, char* , password) {
 asmlinkage long sys_addd_protected_paths(char *rel_path) {
 #endif
 
-    //dummy: implementa aggiunta path alla lista protected_paths
+    char* kernel_pwd;
+    char* kernel_path;
+
+    /* check if user is root EUID 0 */
+    if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
+        printk(KERN_INFO "Only root user can change the status");
+        return -EPERM;
+    }
+
+    /* kmalloc pwd in kernel space */
+    kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
+	if (!kernel_pwd){
+		printk("%s: Error kernel password allocation", MODNAME);
+        	return -ENOMEM; 
+		}
+			
+	// Copy pwd from user space
+	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
+		printk("%s: Error during password copy from user",MODNAME);
+		kfree(kernel_pwd);
+		return -EFAULT;
+	}
+
+    /* check if insert pwd is valid*/
+    if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
+        printk("%s: Invalid password, change state not allowed", MODNAME);
+        kfree(kernel_pwd);
+        return -EACCES;
+    }
+
+    kfree(kernel_pwd);
+
+    /* add new path in list is allowed only in REC_ON or REC_OFF */
+    if (reference_monitor.state == ON || reference_monitor.state == OFF){
+        printk("%s: state is %s, it's not allowed to add a new path in protected_paths list", MODNAME, reference_monitor.state);
+        return -EPERM;
+    }
+
+    kernel_path = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!kernel_path)
+		return -ENOMEM; 
+
+	/* Copy the path from user space, PATH_MAX is 4096, max path size in kernel  */
+	if (copy_from_user(kernel_path, path, PATH_MAX)) {
+		kfree(kernel_path);
+		return -EFAULT;
+	}
+
+    if (file_in_protected_paths_list(kernel_path)){
+        printk("%s: Path %s is already in protected_paths list\n", MODNAME, kernel_path);
+        return -EINVAL;
+    }
+
+
+
+    
     return 0; //ok
 }
 
@@ -145,7 +302,7 @@ int inizialize_syscall(void){
     cr0 = read_cr0();
     unprotect_memory();
     sys_call_table_hacked = (void*) syscall_table_addr;
-    nisyscall = sys_call_table_hacked[free_entries[0]]; // for cleanup
+    hack_ni_syscall = sys_call_table_hacked[free_entries[0]]; // for cleanup
     sys_call_table_hacked[free_entries[0]] = (unsigned long*)sys_switch_state;
     sys_call_table_hacked[free_entries[1]] = (unsigned long*)sys_add_protected_paths;
     sys_call_table_hacked[free_entries[2]] = (unsigned long*)sys_rm_protected_paths;
@@ -217,8 +374,17 @@ int init_module(void) {
 
 void cleanup_module(void) {
 
+    unsigned long **sys_call_table_hacked;
+    cr0 = read_cr0();
+    unprotect_memory();
+    sys_call_table_hacked = (void*) syscall_table_addr;
+    sys_call_table_hacked[free_entries[0]] = hack_ni_syscall;
+    sys_call_table_hacked[free_entries[1]] = hack_ni_syscall;
+    sys_call_table_hacked[free_entries[2]] = hack_ni_syscall;
+    sys_call_table_hacked[free_entries[3]] = hack_ni_syscall;
+    protect_memory();
 
-    //dummy
-   
+    printk("%s: shutting down\n",MODNAME);
+
     return;
 }

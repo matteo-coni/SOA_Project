@@ -16,6 +16,8 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/cred.h>
+#include <linux/list.h>
+#include <linux/namei.h>
 
 #include "utils.h"
 
@@ -26,6 +28,11 @@ enum State {
     REC_ON
 };
 
+struct protected_paths_entry{
+    struct list_head list;
+    char *path;
+    unsigned long inode_n; //number of inode
+};
 
 struct reference_monitor{
     char *password;                    /* Pwd for reconfiguration*/
