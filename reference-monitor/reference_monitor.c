@@ -56,7 +56,7 @@ ino_t get_inode_from_path(const char *path){
 
     ret = kern_path(path, LOOKUP_FOLLOW, &file_path);
     if (ret){
-        printk("%s: Erro during get kernel path from path");
+        printk("%s: Error during get kernel_path from path");
         return -EINVAL;
     }
     // ottieni info sull'inode
@@ -74,9 +74,10 @@ int file_in_protected_paths_list(char *filename_path){
     struct protected_paths_entry *entry, *tmp;
     ino_t inode_number;
     inode_number = get_inode_from_path(filename_path); //funzione oppure 
-    if (inode_number == 0)
+    if (inode_number == 0){
         //not valid path
         return 0;
+    }
 
     rcu_read_lock();
     list_for_each_entry_safe(entry, tmp, &reference_monitor.protected_paths, list){
@@ -85,7 +86,7 @@ int file_in_protected_paths_list(char *filename_path){
             goto exit;       
         }
     }
-exit:
+    exit:
     rcu_read_unlock();
 
     // path isn't in protected_paths lists
@@ -170,6 +171,7 @@ asmlinkage long sys_addd_protected_paths(char *rel_path) {
 
     char* kernel_pwd;
     char* kernel_path;
+    struct protected_paths_entry *entry_list;
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -221,9 +223,21 @@ asmlinkage long sys_addd_protected_paths(char *rel_path) {
         return -EINVAL;
     }
 
-
-
+    /* ADD FILE IN LIST */
+    entry_list->path = kstrdup(path, GFP_KERNEL);
+    entry_list->inode_n = get_inode_from_path(path);
     
+    spin_lock(&reference_monitor.rf_lock);
+
+    // Insert the new entry into the list under RCU protection
+    rcu_read_lock();
+    list_add_rcu(&entry_list->list, &reference_monitor.protected_paths);
+    rcu_read_unlock();
+
+    spin_unlock(&reference_monitor.rf_lock);
+
+    printk("%s: path %s successfully added to protected_paths list", MODNAME, path);
+
     return 0; //ok
 }
 
@@ -233,8 +247,79 @@ __SYSCALL_DEFINEx(2, _rm_protected_paths, char *, path, char* , password) {
 asmlinkage long sys_rm_protected_pathss(char *rel_path) {
 #endif
 
-    //dummy: implementa rimozione path dalla lista protected_paths
-    return 0; //ok
+    char* kernel_pwd;
+    char* kernel_path;
+    
+    struct protected_paths_entry *entry_list, *tmp; //entry_list is an entry of list
+    ino_t inode_number;
+
+    /* check if user is root EUID 0 */
+    if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
+        printk(KERN_INFO "Only root user can change the status");
+        return -EPERM;
+    }
+
+    /* kmalloc pwd in kernel space */
+    kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
+	if (!kernel_pwd){
+		printk("%s: Error kernel password allocation", MODNAME);
+        	return -ENOMEM; 
+		}
+			
+	// Copy pwd from user space
+	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
+		printk("%s: Error during password copy from user",MODNAME);
+		kfree(kernel_pwd);
+		return -EFAULT;
+	}
+
+    /* check if insert pwd is valid*/
+    if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
+        printk("%s: Invalid password, change state not allowed", MODNAME);
+        kfree(kernel_pwd);
+        return -EACCES;
+    }
+
+    kfree(kernel_pwd);
+
+    /* remove path from list is allowed only in REC_ON or REC_OFF */
+    if (reference_monitor.state == ON || reference_monitor.state == OFF){
+        printk("%s: state is %s, it's not allowed to add a new path in protected_paths list", MODNAME, reference_monitor.state);
+        return -EPERM;
+    }
+
+    kernel_path = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!kernel_path)
+		return -ENOMEM; 
+
+	/* Copy the path from user space, PATH_MAX is 4096, max path size in kernel  */
+	if (copy_from_user(kernel_path, path, PATH_MAX)) {
+		kfree(kernel_path);
+		return -EFAULT;
+	}
+
+    if (!file_in_protected_paths_list(kernel_path)){
+        printk("%s: Path %s is not in protected_paths list\n", MODNAME, kernel_path);
+        return -EINVAL;
+    }
+
+    inode_number = get_inode_from_path(kernel_path); //funzione 
+    if (inode_number == 0)
+        //not valid path
+        return 0;
+
+    spin_lock(&reference_monitor.rf_lock); //TODO: in questo modo viene tolto un solo nodo, se vuoi togli if e elimina tutti i nodi
+    list_for_each_entry_safe(entry_list, tmp, &reference_monitor.protected_paths, list){
+        if (entry_list->inode_n == inode_number) {
+            list_del(&entry_list->list);
+            kfree(entry_list);
+            spin_unlock(&reference_monitor.rf_lock);
+            return 0;     
+        }
+    }
+    spin_unlock(&reference_monitor.rf_lock);
+
+    return -EINVAL; //ok
 }
 
 
@@ -244,8 +329,74 @@ __SYSCALL_DEFINEx(2, _print_protected_paths, char*, output_buff, char*, password
 asmlinkage int sys_print_protected_paths;(char __user * pw, int pw_size){
 #endif
 
-    //dummy: implementa print lista protected_paths
-    return 0; //ok
+    char* kernel_pwd;
+    char* kernel_output;
+    struct protected_paths_entry *entry_list, *tmp;
+    int written_chars = 0;
+    size_t busy_space = 0, rem_space_output;
+    int ret = 0;
+
+
+    /* check if user is root EUID 0 */
+    if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
+        printk(KERN_INFO "Only root user can change the status");
+        return -EPERM;
+    }
+
+    /* kmalloc pwd in kernel space */
+    kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
+	if (!kernel_pwd){
+		printk("%s: Error kernel password allocation", MODNAME);
+        	return -ENOMEM; 
+		}
+			
+	// Copy pwd from user space
+	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
+		printk("%s: Error during password copy from user",MODNAME);
+		kfree(kernel_pwd);
+		return -EFAULT;
+	}
+
+    /* check if insert pwd is valid*/
+    if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
+        printk("%s: Invalid password, change state not allowed", MODNAME);
+        kfree(kernel_pwd);
+        return -EACCES;
+    }
+
+    kfree(kernel_pwd);
+
+    kernel_output = kmalloc(OUTPUT_BUFFER_SIZE, GFP_KERNEL);
+    if (!kernel_output){
+		printk("%s: Error during kernel_output allocation", MODNAME);
+        	return -ENOMEM; 
+	}
+
+    spin_lock(&reference_monitor.rf_lock); //uso spinlock per avere protezione su lettura e scrittura
+    
+    list_for_each_entry_safe(entry_list, tmp, &reference_monitor.protected_paths, list){
+
+        rem_space_output = OUTPUT_BUFFER_SIZE - busy_space;
+
+        if(written_chars = snprintf(kernel_output + strlen(kernel_output), rem_space_output, "Path %s, inode_number -> %u\n", entry_list->path, entry_list->inode_n) < 0){
+            printk("%s: Failed to copy path in kernel_output", MODNAME);
+            ret = -EFAULT;
+            spin_unlock(&reference_monitor.rf_lock);
+            kfree(kernel_output);
+            return ret;
+        }
+        busy_space += written_chars;
+    }
+
+    //copy from kernel to user space output for printing
+    if(copy_to_user(output_buff, kernel_output, strlen(kernel_output))!=0){
+        printk("%s: Copy_to_user failed \n", MODNAME);
+    }
+
+    spin_unlock(&reference_monitor.rf_lock);
+    kfree(kernel_output);
+    return ret; //0 if ok
+
 }
 
 

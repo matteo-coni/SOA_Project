@@ -2,6 +2,7 @@
 #define REFERENCE_MONITOR_H
 
 #define PWD_LEN 32
+#define OUTPUT_BUFFER_SIZE (PATH_MAX * 512)
 
 #include <linux/init.h>
 #include <linux/module.h>
