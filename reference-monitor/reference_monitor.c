@@ -79,6 +79,8 @@ int file_in_protected_paths_list(char *filename_path){
         return 0;
     }
 
+    printk("SONO DOPO La GET INODE");
+
     rcu_read_lock();
     list_for_each_entry_safe(entry, tmp, &reference_monitor.protected_paths, list){
         if (entry->inode_n == inode_number) {
@@ -154,58 +156,35 @@ asmlinkage int sys_switch_state(char* state, char __user* pw){
 	}
     printk("prova state kernel: %s", kernel_state);
     //spin_lock(&reference_monitor.rf_lock);
-    enum State stated;
+    
     if(strcmp(kernel_state, "ON")==0){
-        stated = ON;
+        
         printk("SONO IN IF ON ");
+        reference_monitor.state = ON;
+        printk("%s: Switching rm state to ON", MODNAME);
+        
     } else if(strcmp(kernel_state, "OFF") == 0){
-        stated = OFF;
+        
         printk("SONO IN IF OFF ");
+        reference_monitor.state = OFF;
+        printk("%s: Switching rm state to OFF", MODNAME);
+
     } else if(strcmp(kernel_state, "REC_OFF") == 0){
-        stated = REC_OFF; 
+
         printk("SONO IN IF REC_OFF ");
+        reference_monitor.state = REC_OFF;
+        printk("%s: Switching rm state to REC_OFF", MODNAME);
+
     } else if(strcmp(kernel_state, "REC_ON") == 0){
         printk("SONO IN IF REC_ON ") ;
-        stated = REC_ON;       
+        reference_monitor.state = REC_ON;
+        printk("%s: Switching rm state to REC_ON", MODNAME);
+
     } else {
         printk("SONO nell'ELSE ") ;
     }
     printk("OKKKOOKOKOK 88888888");
     
-    switch(stated)
-    {
-        case OFF:
-            reference_monitor.state = OFF;
-            printk("%s: Switching rm state to OFF", MODNAME);
-            break;
-        case ON:
-            //reference_monitor.state = ON;
-            //printk("%s: Switching rm state to ON", MODNAME);
-            break;
-        case REC_OFF:
-            reference_monitor.state = REC_OFF;
-            printk("%s: Switching rm state to REC_OFF", MODNAME);
-            break;
-        case REC_ON:
-            reference_monitor.state = REC_ON;
-            printk("%s: Switching rm state to REC_ON", MODNAME);
-            break;
-        default:
-            printk("%s: Error during switching state, unexpected state!\n");
-            //spin_unlock(&reference_monitor.rf_lock);
-            return -EINVAL;
-    }
-    
-    /*} else if (state == "REC_OFF"){
-        reference_monitor.state = REC_OFF;
-            printk("%s: Switching rm state to REC_OFF", MODNAME);
-
-    } else {
-        printk("%s: Invalid state, switching rm not allowed", MODNAME);
-        
-    }*/
-
-    //spin_unlock(&reference_monitor.rf_lock);
     kfree(kernel_state);
 
     return 0; //ok
@@ -275,15 +254,19 @@ asmlinkage long sys_addd_protected_paths(char *path, char* password) {
 		kfree(kernel_path);
 		return -EFAULT;
 	}
-
+    
     if (file_in_protected_paths_list(kernel_path)){
         printk("%s: Path %s is already in protected_paths list\n", MODNAME, kernel_path);
         return -EINVAL;
     }
-
+    printk("FIN QUI OK 2");
     /* ADD FILE IN LIST */
-    entry_list->path = kstrdup(path, GFP_KERNEL);
-    entry_list->inode_n = get_inode_from_path(path);
+    entry_list = kmalloc(sizeof(struct protected_paths_entry), GFP_KERNEL);
+    entry_list->path = kstrdup(kernel_path, GFP_KERNEL);
+    printk("FIN QUI OK 3");
+    //entry_list->inode_n = get_inode_from_path(kernel_path); //TODO: RISOLVI QUA
+
+    printk("FIN QUI OK 4");
     
     spin_lock(&reference_monitor.rf_lock);
 
@@ -307,6 +290,8 @@ asmlinkage long sys_rm_protected_paths(char *rel_path) {
 
     char* kernel_pwd;
     char* kernel_path;
+
+    printk("STO IN REMOVE SYS");
     
     struct protected_paths_entry *entry_list, *tmp; //entry_list is an entry of list
     ino_t inode_number;
@@ -357,7 +342,7 @@ asmlinkage long sys_rm_protected_paths(char *rel_path) {
 	}
 
     if (!file_in_protected_paths_list(kernel_path)){
-        printk("%s: Path %s is not in protected_paths list\n", MODNAME, kernel_path);
+        printk("%s: Path %s is in protected_paths list\n", MODNAME, kernel_path);
         return -EINVAL;
     }
 
@@ -513,15 +498,15 @@ int inizialize_syscall(void){
     sys_call_table_hacked = (void*) syscall_table_addr;
     hack_ni_syscall = sys_call_table_hacked[free_entries[0]]; // for cleanup
     //printk("%u", sys_call_table_hacked[134]);
-    sys_call_table_hacked[free_entries[0]] = (unsigned long*)sys_switch_state;
+    sys_call_table_hacked[free_entries[0]] = (unsigned long*)sys_switch_state; //134
     //printk("%u", sys_call_table_hacked[134]);
-    sys_call_table_hacked[free_entries[1]] = (unsigned long*)sys_add_protected_paths;
-    sys_call_table_hacked[free_entries[2]] = (unsigned long*)sys_rm_protected_paths;
+    sys_call_table_hacked[free_entries[1]] = (unsigned long*)sys_add_protected_paths; //156
+    sys_call_table_hacked[free_entries[2]] = (unsigned long*)sys_rm_protected_paths; //174
     sys_call_table_hacked[free_entries[3]] = (unsigned long*)sys_print_protected_paths;
     protect_memory();
 
     printk(KERN_INFO "System call 134 = 0x%lx\n ", sys_call_table_hacked[134]);
-    printk("Installed syscall at index %d\n", free_entries[0]);
+    printk("Installed syscall at index %d\n", free_entries[1]);
 
     int i;
     for(i=0; i<15; i++){

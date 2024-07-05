@@ -103,7 +103,7 @@ void do_add_path(void){
         return;
     }
 
-    if(ret = syscall(174,&buffer_path,&buffer_pwd) == 0){
+    if((ret = syscall(156,&buffer_path,&buffer_pwd)) == 0){
         printf("-- Adding of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute adding path! -- \n");
