@@ -99,10 +99,11 @@ int file_in_protected_paths_list(char *filename_path){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2,_switch_state, char*, state, char*, password){
 #else
-asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
+asmlinkage int sys_switch_state(char* state, char __user* pw){
 #endif*/
 
     char* kernel_pwd;
+    char* kernel_state;
     printk("OKKKOOKOKOK iniziale");
 
     /* check if user is root EUID 0 */
@@ -135,13 +136,42 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
         kfree(kernel_pwd);
         return -EACCES;
     }
-
+    printk("OKKKOOKOKOK post check pwd");
     kfree(kernel_pwd);
 
-    spin_lock(&reference_monitor.rf_lock);
+    kernel_state = kmalloc(20, GFP_KERNEL);
+	if (!state){
+		printk("%s: Error kernel stateallocation", MODNAME);
+        	return -ENOMEM; 
+		}
+	
 
-    enum State stated = ON;
-
+	// Copy pwd from user space
+	if (copy_from_user(kernel_state, state, PWD_LEN)) {
+		printk("%s: Error during state copy from user",MODNAME);
+		kfree(kernel_state);
+		return -EFAULT;
+	}
+    printk("prova state kernel: %s", kernel_state);
+    //spin_lock(&reference_monitor.rf_lock);
+    enum State stated;
+    if(strcmp(kernel_state, "ON")==0){
+        stated = ON;
+        printk("SONO IN IF ON ");
+    } else if(strcmp(kernel_state, "OFF") == 0){
+        stated = OFF;
+        printk("SONO IN IF OFF ");
+    } else if(strcmp(kernel_state, "REC_OFF") == 0){
+        stated = REC_OFF; 
+        printk("SONO IN IF REC_OFF ");
+    } else if(strcmp(kernel_state, "REC_ON") == 0){
+        printk("SONO IN IF REC_ON ") ;
+        stated = REC_ON;       
+    } else {
+        printk("SONO nell'ELSE ") ;
+    }
+    printk("OKKKOOKOKOK 88888888");
+    
     switch(stated)
     {
         case OFF:
@@ -149,8 +179,8 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
             printk("%s: Switching rm state to OFF", MODNAME);
             break;
         case ON:
-            reference_monitor.state = ON;
-            printk("%s: Switching rm state to ON", MODNAME);
+            //reference_monitor.state = ON;
+            //printk("%s: Switching rm state to ON", MODNAME);
             break;
         case REC_OFF:
             reference_monitor.state = REC_OFF;
@@ -161,12 +191,22 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
             printk("%s: Switching rm state to REC_ON", MODNAME);
             break;
         default:
-            printk("%s: Invalid state, switching rm not allowed", MODNAME);
-            spin_unlock(&reference_monitor.rf_lock);
+            printk("%s: Error during switching state, unexpected state!\n");
+            //spin_unlock(&reference_monitor.rf_lock);
             return -EINVAL;
     }
+    
+    /*} else if (state == "REC_OFF"){
+        reference_monitor.state = REC_OFF;
+            printk("%s: Switching rm state to REC_OFF", MODNAME);
 
-    spin_unlock(&reference_monitor.rf_lock);
+    } else {
+        printk("%s: Invalid state, switching rm not allowed", MODNAME);
+        
+    }*/
+
+    //spin_unlock(&reference_monitor.rf_lock);
+    kfree(kernel_state);
 
     return 0; //ok
 }
@@ -174,12 +214,14 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _add_protected_paths, char *, path, char* , password) {
 #else 
-asmlinkage long sys_addd_protected_paths(char *rel_path) {
+asmlinkage long sys_addd_protected_paths(char *path, char* password) {
 #endif
 
     char* kernel_pwd;
     char* kernel_path;
     struct protected_paths_entry *entry_list;
+
+    printk("OKKKOOKOKOK INIZIALE ADD");
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -260,7 +302,7 @@ asmlinkage long sys_addd_protected_paths(char *rel_path) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _rm_protected_paths, char *, path, char* , password) {
 #else 
-asmlinkage long sys_rm_protected_pathss(char *rel_path) {
+asmlinkage long sys_rm_protected_paths(char *rel_path) {
 #endif
 
     char* kernel_pwd;
@@ -493,6 +535,7 @@ int inizialize_syscall(void){
 int ref_monitor_initialize(void){
     
     reference_monitor.state = OFF; //State 0 == OFF
+    printk("Initial STATE: %d", reference_monitor.state);
 
     INIT_LIST_HEAD(&reference_monitor.protected_paths);
     spin_lock_init(&reference_monitor.rf_lock);
@@ -554,6 +597,8 @@ void cleanup_module(void) {
     sys_call_table_hacked[free_entries[2]] = hack_ni_syscall;
     sys_call_table_hacked[free_entries[3]] = hack_ni_syscall;
     protect_memory();
+
+    printk("%s: state at  shutdown is: %d", MODNAME, reference_monitor.state);
 
     printk("%s: shutting down\n",MODNAME);
 
