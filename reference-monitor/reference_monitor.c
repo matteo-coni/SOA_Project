@@ -97,12 +97,13 @@ int file_in_protected_paths_list(char *filename_path){
 /* system call SWITCH_STATE reference monitor */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
-__SYSCALL_DEFINEx(2,_switch_state, enum State, state, char* , password){
+__SYSCALL_DEFINEx(2,_switch_state, char*, state, char*, password){
 #else
 asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
-#endif
+#endif*/
 
     char* kernel_pwd;
+    printk("OKKKOOKOKOK iniziale");
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -110,19 +111,24 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
         return -EPERM;
     }
 
+    printk("OKKKOOKOKOK");
+
     /* kmalloc pwd in kernel space */
     kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
 	if (!kernel_pwd){
 		printk("%s: Error kernel password allocation", MODNAME);
         	return -ENOMEM; 
 		}
-			
+	printk("OKKKOOKOKOK 1111111111111");
+
 	// Copy pwd from user space
 	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
 		printk("%s: Error during password copy from user",MODNAME);
 		kfree(kernel_pwd);
 		return -EFAULT;
 	}
+
+    printk("OKKKOOKOKOK 2222222222222");
     /* check if insert pwd is valid */
     if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
         printk("%s: Invalid password, change state not allowed", MODNAME);
@@ -134,7 +140,9 @@ asmlinkage int sys_switch_state(enum state, char __user* pw, int len){
 
     spin_lock(&reference_monitor.rf_lock);
 
-    switch(state)
+    enum State stated = ON;
+
+    switch(stated)
     {
         case OFF:
             reference_monitor.state = OFF;
@@ -179,12 +187,16 @@ asmlinkage long sys_addd_protected_paths(char *rel_path) {
         return -EPERM;
     }
 
+    printk("OKKKOOKOKOK");
+
     /* kmalloc pwd in kernel space */
     kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
 	if (!kernel_pwd){
 		printk("%s: Error kernel password allocation", MODNAME);
         	return -ENOMEM; 
 		}
+
+    printk("OKKKOOKOKOK 222222");
 			
 	// Copy pwd from user space
 	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
@@ -193,12 +205,16 @@ asmlinkage long sys_addd_protected_paths(char *rel_path) {
 		return -EFAULT;
 	}
 
+    printk("OKKKOOKOKOK 333333333333333");
+
     /* check if insert pwd is valid*/
     if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
         printk("%s: Invalid password, change state not allowed", MODNAME);
         kfree(kernel_pwd);
         return -EACCES;
     }
+
+    printk("OKKKOOKOKOK 444444444444444");
 
     kfree(kernel_pwd);
 
@@ -454,17 +470,21 @@ int inizialize_syscall(void){
     unprotect_memory();
     sys_call_table_hacked = (void*) syscall_table_addr;
     hack_ni_syscall = sys_call_table_hacked[free_entries[0]]; // for cleanup
+    //printk("%u", sys_call_table_hacked[134]);
     sys_call_table_hacked[free_entries[0]] = (unsigned long*)sys_switch_state;
+    //printk("%u", sys_call_table_hacked[134]);
     sys_call_table_hacked[free_entries[1]] = (unsigned long*)sys_add_protected_paths;
     sys_call_table_hacked[free_entries[2]] = (unsigned long*)sys_rm_protected_paths;
     sys_call_table_hacked[free_entries[3]] = (unsigned long*)sys_print_protected_paths;
     protect_memory();
 
-    /*printk(KERN_INFO "Free entries syscall = ???");
+    printk(KERN_INFO "System call 134 = 0x%lx\n ", sys_call_table_hacked[134]);
+    printk("Installed syscall at index %d\n", free_entries[0]);
+
     int i;
     for(i=0; i<15; i++){
         printk(KERN_INFO "Free entries syscall array[%d] = %d\n", i, free_entries[i]);
-    }*/
+    }
 
 
     return 0;

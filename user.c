@@ -8,6 +8,7 @@ void do_switch_state(void){
     char buffer_state[100];
     char buffer_pwd[100];
     long ret; //for ret from syscall
+    //enum State;
 
     while(1){
     
@@ -44,10 +45,13 @@ void do_switch_state(void){
     }
 
     //now it's time to call syscall with param state and pwd
-    if(ret = syscall(134,&buffer_state,&buffer_pwd) == 0){
+    ret = syscall(134,&buffer_state,&buffer_pwd);
+    if (ret == 0){
         printf("-- Change state of reference monitor to %s executed successfully ! -- \n", buffer_state);
     } else {
         printf("-- Failed to execute change state! -- \n");
+        perror("\nErrore nella syscall_switch_state");
+        printf("ret = %d", ret);
     }
 
 

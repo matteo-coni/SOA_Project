@@ -3,6 +3,8 @@
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD)/Syscall-table-discovery modules
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD)/reference-monitor modules
+
+	gcc -o user.o user.c
 	
 clean:
 	make -C Syscall-table-discovery/ clean
