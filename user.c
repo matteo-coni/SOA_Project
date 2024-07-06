@@ -112,6 +112,60 @@ void do_add_path(void){
 
 }
 
+void do_remove_path(void){
+    char buffer_pwd[100];
+    char buffer_path[512];
+    int ret, c;
+
+    while(1){
+    
+        printf("Enter PATH you want to remove from protected paths list\n");
+        if (fgets(buffer_path, sizeof(buffer_path),stdin)!=NULL){
+            size_t len = strlen(buffer_path);
+            if (len > 0 && buffer_path[len-1] == '\n') {
+                buffer_path[len-1] = '\0';
+            }
+
+        } else {
+            printf("Error input command, exit...");
+            return;
+        }
+
+        // Check if the path is absolute
+        if (buffer_path[0] != '/') 
+            printf("Error: Path must be absolute\n");
+        else{
+            if (strlen(buffer_path)==1)
+                printf("Error: path is '/' \n");
+            else
+                break;
+        }
+    } /*while ((c = getchar()) != '\n' && c != EOF) {
+            // Discard characters
+        }*/
+
+
+    printf("Enter password: ");
+    if (fgets(buffer_pwd, sizeof(buffer_pwd),stdin)!=NULL){
+        size_t len = strlen(buffer_pwd);
+        if (len > 0 && buffer_pwd[len-1] == '\n') {
+            buffer_pwd[len-1] = '\0';
+        }
+    } else {
+        printf("Error input pwd, exit...");
+        return;
+    }
+
+    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){
+        printf("-- Removing of path %s executed successfully ! -- \n", buffer_path);
+    } else {
+        printf("-- Failed to execute removing path! -- \n");
+        perror("\nErrore nella syscall _rm_protected_paths"); //////PROVA
+    }
+
+
+}
+
 void select_command(int cmd){
 
     switch (cmd) {
@@ -125,12 +179,12 @@ void select_command(int cmd){
             printf("-- Adding path to protected list     --\n");
             do_add_path();
             break;
-        /*case 3:
+        case 3:
             printf("---------------------------- \n");
             printf("- Removing path from list --\n");
             do_remove_path();
             break;
-        case 4:
+        /*case 4:
             printf("---------------------------- \n");
             printf("- Printing protected paths --\n");
             do_print_paths();

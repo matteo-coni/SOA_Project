@@ -93,7 +93,7 @@ int file_in_protected_paths_list(char *filename_path){
 
     // path isn't in protected_paths lists
 
-    return ret;
+    return ret; //ret 1 if present
 }
 
 /* system call SWITCH_STATE reference monitor */
@@ -264,7 +264,7 @@ asmlinkage long sys_addd_protected_paths(char *path, char* password) {
     entry_list = kmalloc(sizeof(struct protected_paths_entry), GFP_KERNEL);
     entry_list->path = kstrdup(kernel_path, GFP_KERNEL);
     printk("FIN QUI OK 3");
-    //entry_list->inode_n = get_inode_from_path(kernel_path); //TODO: RISOLVI QUA
+    entry_list->inode_n = get_inode_from_path(kernel_path); //TODO: RISOLVI QUA
 
     printk("FIN QUI OK 4");
     
@@ -277,7 +277,7 @@ asmlinkage long sys_addd_protected_paths(char *path, char* password) {
 
     spin_unlock(&reference_monitor.rf_lock);
 
-    printk("%s: path %s successfully added to protected_paths list", MODNAME, path);
+    printk("%s: path %s successfully added to protected_paths list", MODNAME, kernel_path);
 
     return 0; //ok
 }
