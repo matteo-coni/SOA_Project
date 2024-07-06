@@ -342,7 +342,7 @@ asmlinkage long sys_rm_protected_paths(char *rel_path) {
 	}
 
     if (!file_in_protected_paths_list(kernel_path)){
-        printk("%s: Path %s is in protected_paths list\n", MODNAME, kernel_path);
+        printk("%s: Path %s is not in protected_paths list\n", MODNAME, kernel_path);
         return -EINVAL;
     }
 

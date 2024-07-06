@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/syscall.h>
 #include <stdlib.h>
+
+
+#define OUTPUT_BUFFER_SIZE (4096 * 512) //4096 is PATH_MAX
 
 void do_switch_state(void){
 
@@ -162,6 +166,39 @@ void do_remove_path(void){
         printf("-- Failed to execute removing path! -- \n");
         perror("\nErrore nella syscall _rm_protected_paths"); //////PROVA
     }
+}
+
+void do_print_paths(void){
+    
+    int ret;
+    char buffer_pwd[100];
+
+    char* output = (char*)malloc(OUTPUT_BUFFER_SIZE * sizeof(char));
+    if (output == NULL){
+        printf("Failed to allocate memory user for output");
+        return;
+    }
+
+    memset(output, 0, OUTPUT_BUFFER_SIZE);
+
+    printf("Enter password: ");
+    if (fgets(buffer_pwd, sizeof(buffer_pwd),stdin)!=NULL){
+        size_t len = strlen(buffer_pwd);
+        if (len > 0 && buffer_pwd[len-1] == '\n') {
+            buffer_pwd[len-1] = '\0';
+        }
+    } else {
+        printf("Error input pwd, exit...");
+        return;
+    }
+
+    if((ret = syscall(177,&output,&buffer_pwd)) == 0){
+        printf("-- Printing of paths executed successfully ! -- \n");
+    } else {
+        printf("-- Failed to execute printing paths! -- \n");
+        perror("\nErrore nella syscall _print_paths"); //////PROVA
+    }
+
 
 
 }
@@ -184,11 +221,11 @@ void select_command(int cmd){
             printf("- Removing path from list --\n");
             do_remove_path();
             break;
-        /*case 4:
+        case 4:
             printf("---------------------------- \n");
             printf("- Printing protected paths --\n");
             do_print_paths();
-            break;*/
+            break;
         default:
             printf("---------------------------- \n");
             printf("Invalid command\n");
