@@ -192,8 +192,9 @@ void do_print_paths(void){
         return;
     }
 
-    if((ret = syscall(177,&output,&buffer_pwd)) == 0){
-        printf("-- Printing of paths executed successfully ! -- \n");
+    if((ret = syscall(177,output,&buffer_pwd)) == 0){
+        printf("\n-- Printing of paths executed successfully ! -- \n");
+        printf("The existing paths are: \n %s",output);
     } else {
         printf("-- Failed to execute printing paths! -- \n");
         perror("\nErrore nella syscall _print_paths"); //////PROVA
