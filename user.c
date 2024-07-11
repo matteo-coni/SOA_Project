@@ -12,7 +12,6 @@ void do_switch_state(void){
     char buffer_state[100];
     char buffer_pwd[100];
     long ret; //for ret from syscall
-    //enum State;
     int c;
 
     while(1){

@@ -19,7 +19,7 @@
 #include <linux/cred.h>
 #include <linux/list.h>
 #include <linux/namei.h>
-
+#include <linux/kprobes.h>
 
 #include "utils.h"
 

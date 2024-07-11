@@ -6,6 +6,39 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Matteo Coni");
 MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
+//prova
+char *get_path_from_dentry(struct dentry *dentry) {
+
+	char *buffer, *full_path, *ret;
+        int len;
+
+        buffer = (char *)__get_free_page(GFP_ATOMIC);
+        if (!buffer)
+                return NULL;
+
+        ret = dentry_path_raw(dentry, buffer, PATH_MAX);
+        if (IS_ERR(ret)) {
+                pr_err("dentry_path_raw failed: %li", PTR_ERR(ret));
+                free_page((unsigned long)buffer);
+                return NULL;
+        } 
+
+        len = strlen(ret);
+
+        full_path = kmalloc(len + 2, GFP_ATOMIC);
+        if (!full_path) {
+                pr_err("error in kmalloc allocation (get_path_from_dentry)\n");
+                return NULL;
+        }
+
+        strncpy(full_path, ret, len);
+        full_path[len + 1] = '\0';
+
+        free_page((unsigned long)buffer);
+        return full_path;
+}
+
+
 
 
 int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
@@ -85,4 +118,5 @@ char* get_pwd_encrypted(const char *pwd) {
     return pwd_hash;
 }
 
-EXPORT_SYMBOL(get_pwd_encrypted); 
+EXPORT_SYMBOL(get_pwd_encrypted);
+//EXPORT_SYMBOL(get_path_from_dentry);

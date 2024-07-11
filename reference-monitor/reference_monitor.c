@@ -48,15 +48,20 @@ MODULE_PARM_DESC(free_entries, "Free entry of syscall table");
 unsigned long sys_ni_syscall_address;
 unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0, 0x0, 0x0};
 
+static struct kretprobe vfs_open_retprobe;
+static struct kretprobe delete_retprobe;
+
 ino_t get_inode_from_path(const char *path){
 
     struct path file_path;
     int ret;
     ino_t inode;
 
+    //printk("%s: eccolo il path", path);
+
     ret = kern_path(path, LOOKUP_FOLLOW, &file_path);
     if (ret){
-        printk("%s: Error during get kernel_path from path");
+        //printk("%s: Error during get kernel_path from path"); //commenta per evitare errori negli handler
         return -EINVAL;
     }
     // ottieni info sull'inode
@@ -73,13 +78,13 @@ int file_in_protected_paths_list(char *filename_path){
     int ret = 0;
     struct protected_paths_entry *entry, *tmp;
     ino_t inode_number;
-    inode_number = get_inode_from_path(filename_path); //funzione oppure 
+    inode_number = get_inode_from_path(filename_path); 
     if (inode_number == 0){
         //not valid path
         return 0;
     }
 
-    printk("SONO DOPO La GET INODE");
+    //printk("SONO DOPO La GET INODE");
 
     rcu_read_lock();
     list_for_each_entry_safe(entry, tmp, &reference_monitor.protected_paths, list){
@@ -101,7 +106,7 @@ int file_in_protected_paths_list(char *filename_path){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2,_switch_state, char*, state, char*, password){
 #else
-asmlinkage int sys_switch_state(char* state, char __user* pw){
+asmlinkage int sys_switch_state(char* state, char __user* password){
 #endif*/
 
     char* kernel_pwd;
@@ -285,7 +290,7 @@ asmlinkage long sys_addd_protected_paths(char *path, char* password) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _rm_protected_paths, char *, path, char* , password) {
 #else 
-asmlinkage long sys_rm_protected_paths(char *rel_path) {
+asmlinkage long sys_rm_protected_paths(char *path) {
 #endif
 
     char* kernel_pwd;
@@ -369,7 +374,7 @@ asmlinkage long sys_rm_protected_paths(char *rel_path) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _print_protected_paths, char*, output_buff, char*, password){
 #else
-asmlinkage int sys_print_protected_paths;(char __user * pw, int pw_size){
+asmlinkage int sys_print_protected_paths;(char* output_buff, char __user * password){
 #endif
 
     char* kernel_pwd;
@@ -441,9 +446,6 @@ asmlinkage int sys_print_protected_paths;(char __user * pw, int pw_size){
     return ret; //0 if ok
 
 }
-
-
-
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
@@ -529,8 +531,136 @@ int ref_monitor_initialize(void){
 
     return 0;
 }
+//RPOVA
+struct invalid_operation_data {
+        char *message;
+};
+
+static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
 
 
+        //printk("PROVA VFS OPEN HANDLER ENTRY FUNCTION");
+
+        struct invalid_operation_data *iop;
+        char message[200];
+        const struct path *path;
+        struct file* file;
+        struct dentry *dentry;
+        fmode_t mode;
+        char *full_path;
+        struct inode *inode;
+        unsigned long inode_number;
+
+        /* retrieve parameters */
+        path = (const struct path *)regs->di;
+        file = (struct file *)regs->si;
+
+        dentry = path->dentry;
+        mode = file->f_mode;
+
+        if ((mode & FMODE_WRITE) || (mode & FMODE_PWRITE) && (reference_monitor.state == ON || reference_monitor.state == REC_ON) ) {
+
+                /* retrieve path */
+                full_path = get_path_from_dentry(dentry);
+                
+                /* retrieve inode number (hard link protection) */
+                /*inode = dentry->d_inode;
+                inode_number = inode->i_ino;*/
+
+                //printk("PROVA VFS OPEN HANDLER");
+                
+                if (file_in_protected_paths_list(full_path)) {
+                        /* set message */
+                        iop = (struct invalid_operation_data *)ri->data;
+                        sprintf(message, "%s [BLOCKED]: Writing attempt on protected file %s\n", MODNAME, full_path);
+                        printk("Path %s trovato nella lista, operazione non permessa", full_path); //prova test ok funziona
+                        iop->message = kstrdup(message, GFP_ATOMIC);
+
+                        kfree(full_path);
+
+                        /* schedule return handler execution, that will update the return value (fd) to -1  */
+                        return 0;
+                }
+
+                 kfree(full_path);
+                
+        }
+
+        return 1;
+   
+}
+//FINE PROVA
+
+static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
+    
+    const struct path *path;
+    struct file* file;
+    struct dentry *dentry;
+    char *full_path;
+    
+
+    /* retrieve parameters */
+    path = (const struct path *)regs->di;
+    file = (struct file *)regs->si;
+
+    dentry = path->dentry;
+
+    full_path = get_path_from_dentry(dentry);
+    if (file_in_protected_paths_list(full_path)) {
+            
+        printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path); //prova test ok funziona
+                        
+        kfree(full_path);
+
+        /* schedule return handler execution, 0 == post handler  */
+        return 0;
+    }
+
+    kfree(full_path);
+
+    return 1; //no post handler
+}
+
+
+static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
+    the_regs->ax = -EACCES;
+    printk("%s: actions blocked\n", MODNAME);
+
+    return 0;
+}
+
+static void set_kretprobe(struct kretprobe *krp, char *symbol_name, kretprobe_handler_t entry_handler) {
+        krp->kp.symbol_name = symbol_name;
+        //krp->kp.flags = KPROBE_FLAG_DISABLED;   // set kretprobe as disable (initial state is OFF)
+        krp->entry_handler = entry_handler;
+        krp->handler = (kretprobe_handler_t)post_handler;
+        krp->maxactive = -1;
+}
+
+static int init_kretprobe(void){
+
+    set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
+    set_kretprobe(&delete_retprobe, "may_delete", may_delete_handler);
+    printk("INIT KRETPROBE");
+
+    int ret;
+
+    ret = register_kretprobe(&vfs_open_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for vfs_open failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for vfs_open registered\n");
+    
+    ret = register_kretprobe(&delete_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for delete failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for may_delete registered\n");
+
+    return 0;
+}
 
 int init_module(void) {
     int ret;
@@ -565,6 +695,8 @@ int init_module(void) {
     reference_monitor.password = pwd_encrypted;    
     printk(KERN_INFO "pwd_encrypted ref monitor = %s\n", reference_monitor.password); //pwd ok
 
+    init_kretprobe(); //initialize the kretprobe for write
+
     printk(KERN_INFO "Reference monitor initialized successfully\n");
     
     return 0;
@@ -584,6 +716,9 @@ void cleanup_module(void) {
     protect_memory();
 
     printk("%s: state at  shutdown is: %d", MODNAME, reference_monitor.state);
+
+    unregister_kretprobe(&vfs_open_retprobe);
+    printk(KERN_INFO "kretprobe for vfs_open unregistered\n");
 
     printk("%s: shutting down\n",MODNAME);
 

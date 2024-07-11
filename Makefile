@@ -5,6 +5,7 @@ all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD)/reference-monitor modules
 
 	gcc -o user.o user.c
+	gcc -o test_write.o test_write.c
 	
 clean:
 	make -C Syscall-table-discovery/ clean
