@@ -597,22 +597,23 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     struct file* file;
     struct dentry *dentry;
     char *full_path;
-    
 
-    /* retrieve parameters */
-    path = (const struct path *)regs->di;
-    file = (struct file *)regs->si;
 
-    dentry = path->dentry;
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,12,0) //altrimenti vm out
+    dentry = (struct dentry *)regs->dx;
+    #else
+    dentry = (struct dentry *)regs->si;
+    #endif
 
     full_path = get_path_from_dentry(dentry);
+
     if (file_in_protected_paths_list(full_path)) {
             
         printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path); //prova test ok funziona
                         
         kfree(full_path);
 
-        /* schedule return handler execution, 0 == post handler  */
+        // schedule return handler execution, 0 == post handler  
         return 0;
     }
 
