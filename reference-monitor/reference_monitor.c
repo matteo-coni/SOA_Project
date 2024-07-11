@@ -562,10 +562,6 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 
                 /* retrieve path */
                 full_path = get_path_from_dentry(dentry);
-                
-                /* retrieve inode number (hard link protection) */
-                /*inode = dentry->d_inode;
-                inode_number = inode->i_ino;*/
 
                 //printk("PROVA VFS OPEN HANDLER");
                 
@@ -719,6 +715,7 @@ void cleanup_module(void) {
     printk("%s: state at  shutdown is: %d", MODNAME, reference_monitor.state);
 
     unregister_kretprobe(&vfs_open_retprobe);
+    unregister_kretprobe(&delete_retprobe);
     printk(KERN_INFO "kretprobe for vfs_open unregistered\n");
 
     printk("%s: shutting down\n",MODNAME);
