@@ -51,6 +51,8 @@ unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0, 0x0, 0x0};
 static struct kretprobe vfs_open_retprobe;
 static struct kretprobe delete_retprobe;
 static struct kretprobe security_mkdir_retprobe;
+static struct kretprobe security_inode_create_retprobe;
+static struct kretprobe security_inode_link_retprobe;
 
 ino_t get_inode_from_path(const char *path){
 
@@ -676,6 +678,85 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     return 1; //no post handler
 }
 
+//handler per inode_create all'interno di directory protette
+static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
+    
+    struct dentry *dentry;
+    char *full_path;
+
+    if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
+        return 1;
+    }
+
+    //printk(KERN_INFO "sono in handler create\n");
+
+    dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento
+
+    full_path = get_path_from_dentry(dentry);
+
+    if (!full_path) {
+        printk(KERN_ERR "Failed to get full path\n");
+        return 1;
+    }
+
+    //printk(KERN_INFO "security_create_handler: full path is %s\n", full_path);
+
+    if (is_within_protected_dirs(full_path)) {
+        printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
+        kfree(full_path);
+        return 0;
+    }
+
+    kfree(full_path);
+    return 1; // no post handler
+}
+
+//handler per la creazione di un hard link su un path protetto o su un path in una directory protetta
+static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
+    struct dentry *old_dentry, *new_dentry;
+    char *old_path, *new_path;
+
+    if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
+        return 1;
+    }
+
+    printk(KERN_INFO "sono in handler link\n");
+
+    old_dentry = (struct dentry *)regs->di;  // Su x86_64, rdi corrisponde al primo argomento (old_dentry)
+    new_dentry = (struct dentry *)regs->dx;  // Su x86_64, r8 corrisponde al terzo argomento (new_dentry)
+
+    old_path = get_path_from_dentry(old_dentry);
+    new_path = get_path_from_dentry(new_dentry);
+
+    if (!old_path || !new_path) {
+        printk(KERN_ERR "Failed to get full path in security_link_handler\n");
+        kfree(old_path);
+        kfree(new_path);
+        return 1;
+    }
+
+    //printk(KERN_INFO "security_link_handler: full path is %s\n", full_path);
+
+    if (is_within_protected_dirs(old_path) || is_within_protected_dirs(new_path) ) {
+        printk(KERN_INFO "Path %s o %s è all'interno di una directory protetta, creazione link non permessa\n", old_path, new_path);
+        kfree(old_path);
+        kfree(new_path);
+        return 0;
+    }
+
+    if (file_in_protected_paths_list(old_path)) {
+            
+        printk(KERN_INFO "Path %s trovato nella lista, creazione link non permessa\n", old_path); //prova test ok funziona
+        kfree(old_path);
+        kfree(new_path); 
+        return 0;
+    }
+
+    kfree(old_path);
+    kfree(new_path);
+    return 1; //no handler post
+}
+
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
     printk("%s: actions blocked\n", MODNAME);
@@ -695,10 +776,10 @@ static int init_kretprobe(void){
 
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
     set_kretprobe(&delete_retprobe, "may_delete", may_delete_handler);
-    //aggiungi "security_inode_mkdir"
     set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
-    //aggiungi "security_inode_create"
+    set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
     //aggiungi "security_inode_link"
+    set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
     //aggiungi "security_inode_unlink"
     
     printk("INIT KRETPROBE");
@@ -725,6 +806,20 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_mkdir registered\n");
+
+    ret = register_kretprobe(&security_inode_create_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for inode_create failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for security_inode_create registered\n");
+
+    ret = register_kretprobe(&security_inode_link_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for inode_link failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for security_inode_link registered\n");
 
     return 0;
 }
@@ -787,7 +882,9 @@ void cleanup_module(void) {
     unregister_kretprobe(&vfs_open_retprobe);
     unregister_kretprobe(&delete_retprobe);
     unregister_kretprobe(&security_mkdir_retprobe);
-    printk(KERN_INFO "kretprobe for vfs_open unregistered\n");
+    unregister_kretprobe(&security_inode_create_retprobe);
+    unregister_kretprobe(&security_inode_link_retprobe);
+    printk(KERN_INFO "kretprobes unregistered\n");
 
     printk("%s: shutting down\n",MODNAME);
 
