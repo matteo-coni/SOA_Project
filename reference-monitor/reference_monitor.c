@@ -656,11 +656,7 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     printk("sono in handler mkdir");
 
 
-    #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,12,0) //altrimenti vm out
-    dentry = (struct dentry *)regs->dx;
-    #else
-    dentry = (struct dentry *)regs->si;
-    #endif
+    dentry = (struct dentry *)regs->si; //si perché su x86_64 è il secondo argomento e corrisponde a dentry nella mkdir
 
     full_path = get_path_from_dentry(dentry);
     if (!full_path) {
