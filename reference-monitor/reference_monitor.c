@@ -53,6 +53,7 @@ static struct kretprobe delete_retprobe;
 static struct kretprobe security_mkdir_retprobe;
 static struct kretprobe security_inode_create_retprobe;
 static struct kretprobe security_inode_link_retprobe;
+static struct kretprobe security_inode_unlink_retprobe;
 
 ino_t get_inode_from_path(const char *path){
 
@@ -789,6 +790,44 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     return 1; //no handler post
 }
 
+static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs *regs){
+    
+    struct dentry *dentry;
+    char *path;
+
+    if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
+        return 1;
+    }
+
+    printk(KERN_INFO "sono in handler unlink\n");
+
+    dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento in unlink (dentry)
+
+    path = get_path_from_dentry(dentry);
+
+    if (!path) {
+        printk(KERN_ERR "Failed to get full path in security_unlink_handler\n");
+        return 1;
+    }
+
+    if (is_within_protected_dirs(path)) {
+        printk(KERN_INFO "Path %s è all'interno di una directory protetta, eliminazione non permessa\n", path);
+        kfree(path);
+        regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
+        return 0;
+    }
+
+    if (file_in_protected_paths_list(path)) {
+        printk(KERN_INFO "Path %s trovato nella lista, eliminazione non permessa\n", path);
+        kfree(path);
+        regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
+        return 0;
+    }
+
+    kfree(path);
+    return 1;
+}
+
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
     printk("%s: actions blocked\n", MODNAME);
@@ -810,9 +849,8 @@ static int init_kretprobe(void){
     set_kretprobe(&delete_retprobe, "may_delete", may_delete_handler);
     set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
     set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
-    //aggiungi "security_inode_link"
     set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
-    //aggiungi "security_inode_unlink"
+    set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);
     
     printk("INIT KRETPROBE");
 
@@ -852,6 +890,13 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_link registered\n");
+
+    ret = register_kretprobe(&security_inode_unlink_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for inode_unlink failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for security_inode_unlink registered\n");
 
     return 0;
 }
@@ -916,6 +961,7 @@ void cleanup_module(void) {
     unregister_kretprobe(&security_mkdir_retprobe);
     unregister_kretprobe(&security_inode_create_retprobe);
     unregister_kretprobe(&security_inode_link_retprobe);
+    unregister_kretprobe(&security_inode_unlink_retprobe);
     printk(KERN_INFO "kretprobes unregistered\n");
 
     printk("%s: shutting down\n",MODNAME);
