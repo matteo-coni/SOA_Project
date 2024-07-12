@@ -335,7 +335,7 @@ asmlinkage long sys_rm_protected_paths(char *path) {
 
     /* remove path from list is allowed only in REC_ON or REC_OFF */
     if (reference_monitor.state == ON || reference_monitor.state == OFF){
-        printk("%s: state is %s, it's not allowed to add a new path in protected_paths list", MODNAME, reference_monitor.state);
+        printk("%s: state is %s, it's not allowed to remove path from protected_paths list", MODNAME, reference_monitor.state);
         return -EPERM;
     }
 
@@ -627,7 +627,7 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 
 static int is_within_protected_dirs(const char *full_path) {
     
-    struct protected_paths_entry *entry;
+    /*struct protected_paths_entry *entry;
     int found = 0;
 
     spin_lock(&reference_monitor.rf_lock);
@@ -641,6 +641,38 @@ static int is_within_protected_dirs(const char *full_path) {
 
     spin_unlock(&reference_monitor.rf_lock);
 
+    return found;*/
+
+    struct protected_paths_entry *entry;
+    char *path;
+    char *slash;
+    int found = 0;
+
+    path = kstrdup(full_path, GFP_KERNEL);
+    if (!path) {
+        printk(KERN_ERR "kstrdup failed in is_within_protected_dirs\n");
+        return 0;
+    }
+
+    spin_lock(&reference_monitor.rf_lock);
+
+    while ((slash = strrchr(path, '/')) != NULL) {
+        *slash = '\0'; // Termina la stringa al carattere slash
+
+        list_for_each_entry(entry, &reference_monitor.protected_paths, list) {
+            if (strcmp(path, entry->path) == 0) {
+                found = 1;
+                break;
+            }
+        }
+
+        if (found)
+            break;
+    }
+
+    spin_unlock(&reference_monitor.rf_lock);
+
+    kfree(path);
     return found;
 }
 
@@ -723,7 +755,7 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     printk(KERN_INFO "sono in handler link\n");
 
     old_dentry = (struct dentry *)regs->di;  // Su x86_64, rdi corrisponde al primo argomento (old_dentry)
-    new_dentry = (struct dentry *)regs->dx;  // Su x86_64, r8 corrisponde al terzo argomento (new_dentry)
+    new_dentry = (struct dentry *)regs->dx;  // Su x86_64, rdx corrisponde al terzo argomento (new_dentry)
 
     old_path = get_path_from_dentry(old_dentry);
     new_path = get_path_from_dentry(new_dentry);
