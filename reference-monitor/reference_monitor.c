@@ -50,6 +50,7 @@ unsigned long new_sys_call_array[] = {0x0, 0x0, 0x0, 0x0, 0x0};
 
 static struct kretprobe vfs_open_retprobe;
 static struct kretprobe delete_retprobe;
+static struct kretprobe security_mkdir_retprobe;
 
 ino_t get_inode_from_path(const char *path){
 
@@ -594,6 +595,10 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     struct dentry *dentry;
     char *full_path;
 
+    if(reference_monitor.state == OFF || reference_monitor.state == REC_OFF){
+        return 1;
+    }
+
 
     #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,12,0) //altrimenti vm out
     dentry = (struct dentry *)regs->dx;
@@ -618,6 +623,12 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     return 1; //no post handler
 }
 
+static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
+
+
+
+    return 1;
+}
 
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
@@ -638,6 +649,12 @@ static int init_kretprobe(void){
 
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
     set_kretprobe(&delete_retprobe, "may_delete", may_delete_handler);
+    //aggiungi "security_inode_mkdir"
+    set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
+    //aggiungi "security_inode_create"
+    //aggiungi "security_inode_link"
+    //aggiungi "security_inode_unlink"
+    
     printk("INIT KRETPROBE");
 
     int ret;
@@ -655,6 +672,13 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for may_delete registered\n");
+    
+    ret = register_kretprobe(&security_mkdir_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for mkdir failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for security_inode_mkdir registered\n");
 
     return 0;
 }
