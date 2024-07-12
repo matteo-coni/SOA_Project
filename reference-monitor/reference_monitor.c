@@ -623,11 +623,61 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     return 1; //no post handler
 }
 
+static int is_within_protected_dirs(const char *full_path) {
+    
+    struct protected_paths_entry *entry;
+    int found = 0;
+
+    spin_lock(&reference_monitor.rf_lock);
+
+    list_for_each_entry(entry, &reference_monitor.protected_paths, list) {
+        if (strncmp(full_path, entry->path, strlen(entry->path)) == 0) {
+            found = 1;
+            break;
+        }
+    }
+
+    spin_unlock(&reference_monitor.rf_lock);
+
+    return found;
+}
+
 static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
 
+    const struct path *path;
+    struct file* file;
+    struct dentry *dentry;
+    char *full_path;
+
+    if(reference_monitor.state == OFF || reference_monitor.state == REC_OFF){
+        return 1;
+    }
+
+    printk("sono in handler mkdir");
 
 
-    return 1;
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,12,0) //altrimenti vm out
+    dentry = (struct dentry *)regs->dx;
+    #else
+    dentry = (struct dentry *)regs->si;
+    #endif
+
+    full_path = get_path_from_dentry(dentry);
+    if (!full_path) {
+        printk(KERN_ERR "Failed to get full path\n");
+        return 1;
+    }
+
+    if (is_within_protected_dirs(full_path)) {
+        printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
+        kfree(full_path);
+        //regs->ax = -EACCES;
+        return 0; //post handler
+    }
+
+    kfree(full_path);
+
+    return 1; //no post handler
 }
 
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
@@ -740,6 +790,7 @@ void cleanup_module(void) {
 
     unregister_kretprobe(&vfs_open_retprobe);
     unregister_kretprobe(&delete_retprobe);
+    unregister_kretprobe(&security_mkdir_retprobe);
     printk(KERN_INFO "kretprobe for vfs_open unregistered\n");
 
     printk("%s: shutting down\n",MODNAME);
