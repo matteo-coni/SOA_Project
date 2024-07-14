@@ -834,7 +834,7 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
         return 1;
     }
 
-    printk(KERN_INFO "sono in handler unlink\n");
+    //printk(KERN_INFO "sono in handler unlink\n");
 
     dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento in unlink (dentry)
 
@@ -865,16 +865,18 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
 
 static int calculate_fingerprint(char* pathname, char* hash_out){
     
-    char *path;
+    //char *path;
     struct file *file;
     char *file_content;
     int file_size;
     int ret = -1;
     mm_segment_t oldfs;
+
+    printk("ENTRY FINGERPRINT");
     
-    file = filp_open(path, O_RDONLY, 0644);
+    file = filp_open(pathname, O_RDONLY, 0644);
     if (!file || IS_ERR(file)) {
-        printk("Failed to open file %s with error %ld\n", path, PTR_ERR(file));
+        printk("Failed to open file %s with error %ld\n", pathname, PTR_ERR(file));
         ret = -ENOENT;
     }
 
@@ -894,7 +896,7 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
         ret = -ENOMEM;
     }
 
-    
+    printk("METa FINGERPRINT");
     //oldfs = get_fs();
     //set_fs(KERNEL_DS);
     ret = kernel_read(file, file_content, file_size, &file->f_pos);
@@ -917,6 +919,8 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
     kfree(file_content);
     filp_close(file, NULL);
 
+    printk("FINE FINGERPRINT");
+
     return 0; //0 = success
 }
 
@@ -926,12 +930,15 @@ void handler_def_work(struct work_struct *work_data){
     struct file *file_log_output;
     char log_data[256];
 
+     printk("SONO IN HANDLER DEF WORK");
+
     struct packed_work *pck_work = container_of(work_data, struct packed_work, work);
     if(!pck_work){
         printk("Error during packed_work container_of");
     }
 
-    printk("SONO IN HANDLER DEF WORK");
+    printk("SONO IN HANDLER DEF WORK  2222222");
+    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname);
 
 
     ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
@@ -964,7 +971,7 @@ void handler_def_work(struct work_struct *work_data){
 }
 
 /* function for collect info like as TID, TGID, UID, EUID and schedule deferred work */
-static void collect_info(void){
+static void collect_info(const char *pathname){
 
     struct info_log *info_log;
     struct packed_work *packed_work;
@@ -972,15 +979,19 @@ static void collect_info(void){
     struct file *exe_file;
     char *path_buffer;
     char *program_path;
+    struct dentry *exe_dentry;
+    char *path_file;
 
-    spin_lock(&defwork_lock);
-
-    printk("PROVA INIZIO COLLECT");
+    //spin_lock(&defwork_lock);
+    if (!pathname) {
+        printk(KERN_ERR "collect_info: pathname is NULL\n");
+        return;
+    }
 
     info_log = kmalloc(sizeof(struct info_log), GFP_ATOMIC);
         if (!info_log) {
                 pr_err("%s: error in kmalloc allocation (info_log)\n", MODNAME);
-                spin_unlock(&defwork_lock);
+                //spin_unlock(&defwork_lock);
                 return;
         }
 
@@ -990,14 +1001,15 @@ static void collect_info(void){
         kfree(info_log);
         return;
     }
-
-    info_log->pathname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
-    if (!info_log->pathname) {
-        pr_err("%s: error in kmalloc allocation (pathname)\n", MODNAME);
+    
+    
+    //info_log->pathname = kstrdup(pathname, GFP_KERNEL);
+    /*if (!info_log->pathname) {
+        pr_err("%s: error in kstrdup allocation (pathname)\n", MODNAME);
         kfree(info_log);
         kfree(packed_work);
         return;
-    }
+    }*/
 
     info_log->hash_file_content = kmalloc(SHA256_DIGEST_SIZE * 2 + 1, GFP_KERNEL);
     if (!info_log->hash_file_content) {
@@ -1025,7 +1037,9 @@ static void collect_info(void){
         return;
     }
 
-    printk("PROVA Meta COLLECT");
+    exe_dentry = mm->exe_file->f_path.dentry;
+    path_file = get_path_from_dentry(exe_dentry);
+    info_log->pathname = kstrdup(path_file, GFP_ATOMIC); //cosi metto il comando
 
 
     path_buffer = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
@@ -1041,30 +1055,45 @@ static void collect_info(void){
         return;
     }
 
-    snprintf(packed_work->info_log->pathname, MAX_PATH_LEN, "%s", program_path);
-    kfree(path_buffer);
-
-
     packed_work->info_log = info_log;
 
-    printk("PROVA FINE COLLECT");
+    //snprintf(packed_work->info_log->pathname, MAX_PATH_LEN, "%s", program_path);
+    kfree(path_buffer);
+
+    wq = alloc_workqueue("REFERENCE_MONITOR_WORKQUEUE", WQ_MEM_RECLAIM, 1);
 
     INIT_WORK(&packed_work->work, handler_def_work); 
-    queue_work(wq, &packed_work->work);
+    if (!queue_work(wq, &packed_work->work)) {
+        pr_err("%s: failed to queue work\n", MODNAME);
+        goto cleanup;
+    }
+    //schedule_work(&packed_work->work);
+
+    printk(KERN_INFO "collect_info: work queued\n");
+    return;
+
+cleanup:
+    if (info_log) {
+        kfree(info_log->pathname);
+        kfree(info_log->hash_file_content);
+        kfree(info_log);
+    }
+    kfree(packed_work);
+    kfree(path_buffer);
 }
 
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
     printk("%s: actions blocked\n", MODNAME);
+    const char *pathname = (const char *)the_regs->di;
 
-    collect_info();
+    collect_info(pathname);
 
     return 0;
 }
 
 static void set_kretprobe(struct kretprobe *krp, char *symbol_name, kretprobe_handler_t entry_handler) {
         krp->kp.symbol_name = symbol_name;
-        //krp->kp.flags = KPROBE_FLAG_DISABLED;   // set kretprobe as disable (initial state is OFF)
         krp->entry_handler = entry_handler;
         krp->handler = (kretprobe_handler_t)post_handler;
         krp->maxactive = -1;
