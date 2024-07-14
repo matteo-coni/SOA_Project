@@ -30,6 +30,7 @@ MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
 struct reference_monitor reference_monitor;
 unsigned long cr0;
+spinlock_t defwork_lock;
 
 unsigned long *hack_ni_syscall; //prova
 
@@ -859,9 +860,136 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
     return 1;
 }
 
+static int calculate_fingerprint(char* pathname, char* hash_out){
+    
+    char *path;
+    struct file *file;
+    char *file_content;
+    int file_size;
+    int ret = -1;
+    
+    file = filp_open(path, O_RDONLY, 0);
+    if (!file || IS_ERR(file)) {
+        printk("Failed to open file %s with error %ld\n", path, PTR_ERR(file));
+        ret = -ENOENT;
+    }
+
+    file_size = i_size_read(file_inode(file));
+    if (file_size <= 0) {
+        printk("Invalid file size\n");
+        ret = -EINVAL;
+        filp_close(file, NULL); 
+    }
+
+    
+    file_content = kmalloc(file_size, GFP_KERNEL);
+    if (!file_content) {
+        printk( "Failed to allocate memory for file content\n");
+        ret = -ENOMEM;
+        filp_close(file, NULL);
+    }
+
+    
+    ret = kernel_read(file, file_content, file_size, &file->f_pos);
+    if (ret < 0) {
+        printk("Failed to read file content\n");
+        kfree(file_content);
+    }
+
+    ret = do_sha256(file_content, file_size, hash_out);
+    if (ret < 0) {
+        printk(KERN_ERR "Failed to calculate SHA-256 hash\n");
+        kfree(file_content);
+    }
+    
+    return ret; //0 = success
+}
+
+void handler_def_work(struct work_struct *work_data){
+    
+    int ret;
+    struct packed_work *pck_work = container_of(work_data, struct packed_work, work);
+    if(!pck_work){
+        printk("Error during packed_work container_of");
+    }
+
+    ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
+    if (ret != 0) {
+        printk(KERN_ERR "Impossibile calcolare l'hash per %s\n", pck_work->info_log->pathname);
+        kfree(pck_work);
+        return;
+    }
+
+    
+
+
+
+
+}
+
+/* function for collect info like as TID, TGID, UID, EUID and schedule deferred work */
+static void collect_info(){
+
+    struct info_log *info_log;
+    struct packed_work *packed_work;
+    struct mm_struct *mm;
+    struct file *exe_file;
+    char *path_buffer;
+    char *program_path;
+
+    spin_lock(&defwork_lock);
+
+    info_log = kmalloc(sizeof(struct info_log), GFP_ATOMIC);
+        if (!info_log) {
+                pr_err("%s: error in kmalloc allocation (info_log)\n", MODNAME);
+                spin_unlock(&defwork_lock);
+                return;
+        }
+
+    info_log->uid = current_uid().val;
+    info_log->euid = current_euid().val;
+    info_log->tid = current->pid;
+    info_log->tgid = task_tgid_vnr(current);
+    mm = current->mm;
+    if (!mm) {
+        kfree(packed_work);
+        return -EFAULT;
+    }
+
+    exe_file = mm->exe_file;
+    if (!exe_file) {
+        kfree(packed_work);
+        return -EFAULT;
+    }
+
+    path_buffer = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+    if (!path_buffer) {
+        kfree(packed_work);
+        return -ENOMEM;
+    }
+
+    program_path = d_path(&exe_file->f_path, path_buffer, MAX_PATH_LEN);
+    if (IS_ERR(program_path)) {
+        kfree(path_buffer);
+        kfree(packed_work);
+        return PTR_ERR(program_path);
+    }
+
+    snprintf(packed_work->info_log->pathname, MAX_PATH_LEN, "%s", program_path);
+    kfree(path_buffer);
+
+
+    packed_work->info_log = info_log;
+
+    INIT_WORK(&packed_work->work, handler_def_work); 
+    //queue_work(wq, &packed_work->work);
+}
+
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
     printk("%s: actions blocked\n", MODNAME);
+
+    collect_info();
 
     return 0;
 }

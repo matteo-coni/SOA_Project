@@ -6,7 +6,7 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Matteo Coni");
 MODULE_DESCRIPTION("Kernel Level Reference Monitor Module");
 
-//prova
+
 char *get_path_from_dentry(struct dentry *dentry) {
 
 	char *buffer, *full_path, *ret;

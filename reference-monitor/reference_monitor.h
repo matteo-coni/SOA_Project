@@ -3,6 +3,7 @@
 
 #define PWD_LEN 32
 #define OUTPUT_BUFFER_SIZE (PATH_MAX * 512)
+#define MAX_PATH_LEN 256
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -51,6 +52,11 @@ struct info_log{
     uid_t euid;
     char* pathname;
     char* hash_file_content;
+};
+
+struct packed_work{
+    struct work_struct work;
+    struct info_log *info_log;
 };
 
 #endif // REFERENCE_MONITOR_H

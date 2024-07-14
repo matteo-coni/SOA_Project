@@ -56,9 +56,9 @@ ssize_t onefilefs_read(struct file * filp, char __user * buf, size_t len, loff_t
 
 }
 
-ssize_t onefilefs_write(struct kiocb *iocb, struct iov_iter *from){
-    
-}
+/*ssize_t onefilefs_write(struct kiocb *iocb, struct iov_iter *from){
+
+}*/
 
 
 struct dentry *onefilefs_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags) {
@@ -131,5 +131,5 @@ const struct inode_operations onefilefs_inode_ops = {
 const struct file_operations onefilefs_file_operations = {
     .owner = THIS_MODULE,
     .read = onefilefs_read,
-    .write_iter = onefilefs_write //please implement this function to complete the exercise
+    //.write_iter = onefilefs_write //please implement this function to complete the exercise
 };
