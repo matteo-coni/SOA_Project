@@ -6,11 +6,11 @@ all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 load-FS-driver:
-	insmod singlefilefs.ko
+	sudo insmod singlefilefs.ko
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-	rm onefilemakefs
+#rm onefilemakefs
 
 create-fs:
 	dd bs=4096 count=100 if=/dev/zero of=image
@@ -18,4 +18,8 @@ create-fs:
 	mkdir mount
 	
 mount-fs:
-	mount -o loop -t singlefilefs image ./mount/
+	sudo mount -o loop -t singlefilefs image ./mount/
+
+umount-fs:
+	umount ./mount
+	rmdir ./mount

@@ -20,6 +20,7 @@
 #define MODNAME "REFERENCE MONITOR"
 
 #include "reference_monitor.h"
+#include "utils.h"
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -56,6 +57,8 @@ static struct kretprobe security_inode_create_retprobe;
 static struct kretprobe security_inode_link_retprobe;
 static struct kretprobe security_inode_symlink_retprobe;
 static struct kretprobe security_inode_unlink_retprobe;
+
+//static void collect_info(void);
 
 ino_t get_inode_from_path(const char *path){
 
@@ -867,8 +870,9 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
     char *file_content;
     int file_size;
     int ret = -1;
+    mm_segment_t oldfs;
     
-    file = filp_open(path, O_RDONLY, 0);
+    file = filp_open(path, O_RDONLY, 0644);
     if (!file || IS_ERR(file)) {
         printk("Failed to open file %s with error %ld\n", path, PTR_ERR(file));
         ret = -ENOENT;
@@ -877,41 +881,58 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
     file_size = i_size_read(file_inode(file));
     if (file_size <= 0) {
         printk("Invalid file size\n");
+        filp_close(file, NULL);
         ret = -EINVAL;
-        filp_close(file, NULL); 
+         
     }
 
     
     file_content = kmalloc(file_size, GFP_KERNEL);
     if (!file_content) {
         printk( "Failed to allocate memory for file content\n");
-        ret = -ENOMEM;
         filp_close(file, NULL);
+        ret = -ENOMEM;
     }
 
     
+    //oldfs = get_fs();
+    //set_fs(KERNEL_DS);
     ret = kernel_read(file, file_content, file_size, &file->f_pos);
+    //set_fs(oldfs);
     if (ret < 0) {
         printk("Failed to read file content\n");
         kfree(file_content);
+        filp_close(file, NULL);
+        return ret;
     }
 
     ret = do_sha256(file_content, file_size, hash_out);
     if (ret < 0) {
         printk(KERN_ERR "Failed to calculate SHA-256 hash\n");
         kfree(file_content);
+        filp_close(file, NULL);
+        return ret;
     }
     
-    return ret; //0 = success
+    kfree(file_content);
+    filp_close(file, NULL);
+
+    return 0; //0 = success
 }
 
 void handler_def_work(struct work_struct *work_data){
     
     int ret;
+    struct file *file_log_output;
+    char log_data[256];
+
     struct packed_work *pck_work = container_of(work_data, struct packed_work, work);
     if(!pck_work){
         printk("Error during packed_work container_of");
     }
+
+    printk("SONO IN HANDLER DEF WORK");
+
 
     ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
     if (ret != 0) {
@@ -920,15 +941,30 @@ void handler_def_work(struct work_struct *work_data){
         return;
     }
 
+    printk("SONO IN HANDLER DEF WORK dopo fingerprint");
+
+    file_log_output = filp_open(PATH_LOG_FILE, O_WRONLY, 0644);
+    if (IS_ERR(file_log_output)) {
+        int err = PTR_ERR(file_log_output);
+        printk("Error on opening log file: %d \n", err);
+        ret = err;
+        //pulisci mem
+    }
+
+    //formattazione pre scrittura file
+    snprintf(log_data, 256, "%d, %d, %u, %u, %s, %s\n", pck_work->info_log->tgid, pck_work->info_log->tid, pck_work->info_log->uid, pck_work->info_log->euid, pck_work->info_log->pathname, pck_work->info_log->hash_file_content);
+
+    ret = kernel_write(file_log_output, log_data, strlen(log_data), &file_log_output->f_pos);
+
+    filp_close(file_log_output, NULL);
+
+    return;
     
-
-
-
 
 }
 
 /* function for collect info like as TID, TGID, UID, EUID and schedule deferred work */
-static void collect_info(){
+static void collect_info(void){
 
     struct info_log *info_log;
     struct packed_work *packed_work;
@@ -939,6 +975,8 @@ static void collect_info(){
 
     spin_lock(&defwork_lock);
 
+    printk("PROVA INIZIO COLLECT");
+
     info_log = kmalloc(sizeof(struct info_log), GFP_ATOMIC);
         if (!info_log) {
                 pr_err("%s: error in kmalloc allocation (info_log)\n", MODNAME);
@@ -946,33 +984,61 @@ static void collect_info(){
                 return;
         }
 
+    packed_work = kmalloc(sizeof(struct packed_work), GFP_KERNEL);
+    if (!packed_work) {
+        pr_err("%s: error in kmalloc allocation (packed_work)\n", MODNAME);
+        kfree(info_log);
+        return;
+    }
+
+    info_log->pathname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+    if (!info_log->pathname) {
+        pr_err("%s: error in kmalloc allocation (pathname)\n", MODNAME);
+        kfree(info_log);
+        kfree(packed_work);
+        return;
+    }
+
+    info_log->hash_file_content = kmalloc(SHA256_DIGEST_SIZE * 2 + 1, GFP_KERNEL);
+    if (!info_log->hash_file_content) {
+        pr_err("%s: error in kmalloc allocation (hash_file_content)\n", MODNAME);
+        kfree(info_log->pathname);
+        kfree(info_log);
+        kfree(packed_work);
+        return;
+    }
+
     info_log->uid = current_uid().val;
     info_log->euid = current_euid().val;
     info_log->tid = current->pid;
     info_log->tgid = task_tgid_vnr(current);
+    
     mm = current->mm;
     if (!mm) {
         kfree(packed_work);
-        return -EFAULT;
+        return;
     }
 
     exe_file = mm->exe_file;
     if (!exe_file) {
         kfree(packed_work);
-        return -EFAULT;
+        return;
     }
+
+    printk("PROVA Meta COLLECT");
+
 
     path_buffer = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
     if (!path_buffer) {
         kfree(packed_work);
-        return -ENOMEM;
+        return;
     }
 
     program_path = d_path(&exe_file->f_path, path_buffer, MAX_PATH_LEN);
     if (IS_ERR(program_path)) {
         kfree(path_buffer);
         kfree(packed_work);
-        return PTR_ERR(program_path);
+        return;
     }
 
     snprintf(packed_work->info_log->pathname, MAX_PATH_LEN, "%s", program_path);
@@ -981,8 +1047,10 @@ static void collect_info(){
 
     packed_work->info_log = info_log;
 
+    printk("PROVA FINE COLLECT");
+
     INIT_WORK(&packed_work->work, handler_def_work); 
-    //queue_work(wq, &packed_work->work);
+    queue_work(wq, &packed_work->work);
 }
 
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){

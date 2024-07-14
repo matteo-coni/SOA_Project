@@ -4,6 +4,7 @@
 #define PWD_LEN 32
 #define OUTPUT_BUFFER_SIZE (PATH_MAX * 512)
 #define MAX_PATH_LEN 256
+#define PATH_LOG_FILE "/mnt/rf-monitor-fs/log_file"
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -24,6 +25,8 @@
 
 #include "utils.h"
 
+static struct workqueue_struct *wq;
+
 enum State {
     OFF,
     ON,
@@ -42,7 +45,6 @@ struct reference_monitor{
     enum State state;                         /* State of ref_monitor: OFF(0) - ON(1) - REC-OFF(2) - REC-ON(3) */
     struct list_head protected_paths;
     spinlock_t rf_lock;
-    //aggiungi list blackist file e dir
 };
 
 struct info_log{
