@@ -44,5 +44,13 @@ struct reference_monitor{
     //aggiungi list blackist file e dir
 };
 
+struct info_log{
+    pid_t tid;
+    pid_t tgid;
+    uid_t uid;
+    uid_t euid;
+    char* pathname;
+    char* hash_file_content;
+};
 
 #endif // REFERENCE_MONITOR_H
