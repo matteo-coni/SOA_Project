@@ -53,6 +53,7 @@ static struct kretprobe delete_retprobe;
 static struct kretprobe security_mkdir_retprobe;
 static struct kretprobe security_inode_create_retprobe;
 static struct kretprobe security_inode_link_retprobe;
+static struct kretprobe security_inode_symlink_retprobe;
 static struct kretprobe security_inode_unlink_retprobe;
 
 ino_t get_inode_from_path(const char *path){
@@ -790,6 +791,36 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     return 1; //no handler post
 }
 
+static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs *regs){
+    
+    struct dentry *old_dentry;
+    char *old_path;
+
+    if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
+        return 1;
+    }
+
+    printk(KERN_INFO "sono in handler symlink\n");
+
+    old_dentry = (struct dentry *)regs->dx;  // Su x86_64, rdx corrisponde al terzo argomento (old_dentry)
+
+    old_path = get_path_from_dentry(old_dentry);
+
+    if (!old_path) {
+        printk(KERN_ERR "Failed to get full path in security_symlink_handler\n");
+        return 1;
+    }
+
+    if (is_within_protected_dirs(old_path)) {
+        printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione symlink non permessa\n", old_path);
+        kfree(old_path);
+        return 0;
+    }
+
+    kfree(old_path);
+    return 1; 
+}
+
 static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs *regs){
     
     struct dentry *dentry;
@@ -850,7 +881,9 @@ static int init_kretprobe(void){
     set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
     set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
     set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
+    set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
     set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);
+    
     
     printk("INIT KRETPROBE");
 
@@ -890,6 +923,13 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_link registered\n");
+
+    ret = register_kretprobe(&security_inode_symlink_retprobe);
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe for inode_symlink failed, returned %d\n", ret);
+        return ret;
+    }
+    printk(KERN_INFO "kretprobe for security_inode_symlink registered\n");
 
     ret = register_kretprobe(&security_inode_unlink_retprobe);
     if (ret < 0) {
@@ -961,6 +1001,7 @@ void cleanup_module(void) {
     unregister_kretprobe(&security_mkdir_retprobe);
     unregister_kretprobe(&security_inode_create_retprobe);
     unregister_kretprobe(&security_inode_link_retprobe);
+    unregister_kretprobe(&security_inode_symlink_retprobe);
     unregister_kretprobe(&security_inode_unlink_retprobe);
     printk(KERN_INFO "kretprobes unregistered\n");
 
