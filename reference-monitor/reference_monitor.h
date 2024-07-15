@@ -4,7 +4,7 @@
 #define PWD_LEN 32
 #define OUTPUT_BUFFER_SIZE (PATH_MAX * 512)
 #define MAX_PATH_LEN 256
-#define PATH_LOG_FILE "/mnt/rf-monitor-fs/log_file"
+#define PATH_LOG_FILE "/home/matteo/Desktop/SOA_Project/singlefile-FS/mount/the-file"
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -53,12 +53,17 @@ struct info_log{
     uid_t uid;
     uid_t euid;
     char* pathname;
+    char* pathname_file;
     char* hash_file_content;
 };
 
 struct packed_work{
     struct work_struct work;
     struct info_log *info_log;
+};
+
+struct my_data {
+    char *filename_handler;
 };
 
 #endif // REFERENCE_MONITOR_H

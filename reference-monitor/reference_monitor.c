@@ -58,7 +58,7 @@ static struct kretprobe security_inode_link_retprobe;
 static struct kretprobe security_inode_symlink_retprobe;
 static struct kretprobe security_inode_unlink_retprobe;
 
-//static void collect_info(void);
+const char* filename_handler;
 
 ino_t get_inode_from_path(const char *path){
 
@@ -559,10 +559,18 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
         char *full_path;
         struct inode *inode;
         unsigned long inode_number;
+        struct my_data *data;
 
         /* retrieve parameters */
         path = (const struct path *)regs->di;
         file = (struct file *)regs->si;
+
+        data = (struct my_data *)ri->data; //pr
+        data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+        if (!data->filename_handler) {
+            printk(KERN_ERR "entry_handler: kmalloc failed\n");
+            return -ENOMEM;
+        }
 
         dentry = path->dentry;
         mode = file->f_mode;
@@ -576,10 +584,9 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
                 
                 if (file_in_protected_paths_list(full_path)) {
                         /* set message */
-                        iop = (struct invalid_operation_data *)ri->data;
-                        sprintf(message, "%s [BLOCKED]: Writing attempt on protected file %s\n", MODNAME, full_path);
+                
                         printk("Path %s trovato nella lista, operazione non permessa", full_path); //prova test ok funziona
-                        iop->message = kstrdup(message, GFP_ATOMIC);
+                        data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
 
                         kfree(full_path);
 
@@ -602,9 +609,17 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     struct file* file;
     struct dentry *dentry;
     char *full_path;
+    struct my_data *data;
 
     if(reference_monitor.state == OFF || reference_monitor.state == REC_OFF){
         return 1;
+    }
+
+    data = (struct my_data *)ri->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
     }
 
 
@@ -619,7 +634,8 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     if (file_in_protected_paths_list(full_path)) {
             
         printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path); //prova test ok funziona
-                        
+        data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
+                       
         kfree(full_path);
 
         // schedule return handler execution, 0 == post handler  
@@ -633,21 +649,6 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 
 static int is_within_protected_dirs(const char *full_path) {
     
-    /*struct protected_paths_entry *entry;
-    int found = 0;
-
-    spin_lock(&reference_monitor.rf_lock);
-
-    list_for_each_entry(entry, &reference_monitor.protected_paths, list) {
-        if (strncmp(full_path, entry->path, strlen(entry->path)) == 0) {
-            found = 1;
-            break;
-        }
-    }
-
-    spin_unlock(&reference_monitor.rf_lock);
-
-    return found;*/
 
     struct protected_paths_entry *entry;
     char *path;
@@ -688,12 +689,19 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     struct file* file;
     struct dentry *dentry;
     char *full_path;
+    struct my_data *data;
 
     if(reference_monitor.state == OFF || reference_monitor.state == REC_OFF){
         return 1;
     }
 
     printk("sono in handler mkdir");
+    data = (struct my_data *)ri->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
+    }
 
 
     dentry = (struct dentry *)regs->si; //si perché su x86_64 è il secondo argomento e corrisponde a dentry nella mkdir
@@ -706,6 +714,7 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
 
     if (is_within_protected_dirs(full_path)) {
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
+        data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
         kfree(full_path);
         //regs->ax = -EACCES;
         return 0; //post handler
@@ -721,12 +730,19 @@ static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs
     
     struct dentry *dentry;
     char *full_path;
+    struct my_data *data;
 
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
         return 1;
     }
 
     //printk(KERN_INFO "sono in handler create\n");
+    data = (struct my_data *)ri->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
+    }
 
     dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento
 
@@ -741,6 +757,7 @@ static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs
 
     if (is_within_protected_dirs(full_path)) {
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
+        data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
         kfree(full_path);
         return 0;
     }
@@ -753,12 +770,13 @@ static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs
 static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     struct dentry *old_dentry, *new_dentry;
     char *old_path, *new_path;
+    struct my_data *data;
 
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
         return 1;
     }
 
-    printk(KERN_INFO "sono in handler link\n");
+    printk(KERN_INFO "Handler link\n");
 
     old_dentry = (struct dentry *)regs->di;  // Su x86_64, rdi corrisponde al primo argomento (old_dentry)
     new_dentry = (struct dentry *)regs->dx;  // Su x86_64, rdx corrisponde al terzo argomento (new_dentry)
@@ -773,24 +791,35 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
         return 1;
     }
 
-    //printk(KERN_INFO "security_link_handler: full path is %s\n", full_path);
+    data = (struct my_data *)ri->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
+    }
+
 
     if (is_within_protected_dirs(old_path) || is_within_protected_dirs(new_path) ) {
         printk(KERN_INFO "Path %s o %s è all'interno di una directory protetta, creazione link non permessa\n", old_path, new_path);
-        kfree(old_path);
+        data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
+        //kfree(old_path);
         kfree(new_path);
+         //pr
         return 0;
     }
 
     if (file_in_protected_paths_list(old_path)) {
             
         printk(KERN_INFO "Path %s trovato nella lista, creazione link non permessa\n", old_path); //prova test ok funziona
-        kfree(old_path);
+        //kfree(old_path);
+        data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
         kfree(new_path); 
+        printk("prova %s e oldpath: %s", data->filename_handler, old_path);
+    
         return 0;
     }
 
-    kfree(old_path);
+    //kfree(old_path);
     kfree(new_path);
     return 1; //no handler post
 }
@@ -799,6 +828,7 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
     
     struct dentry *old_dentry;
     char *old_path;
+    struct my_data *data;
 
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
         return 1;
@@ -810,6 +840,13 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
 
     old_path = get_path_from_dentry(old_dentry);
 
+    data = (struct my_data *)p->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
+    }
+
     if (!old_path) {
         printk(KERN_ERR "Failed to get full path in security_symlink_handler\n");
         return 1;
@@ -817,6 +854,7 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
 
     if (is_within_protected_dirs(old_path)) {
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione symlink non permessa\n", old_path);
+        data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
         kfree(old_path);
         return 0;
     }
@@ -829,12 +867,19 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
     
     struct dentry *dentry;
     char *path;
+    struct my_data *data;
 
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
         return 1;
     }
 
     //printk(KERN_INFO "sono in handler unlink\n");
+    data = (struct my_data *)p->data; //pr
+    data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!data->filename_handler) {
+        printk(KERN_ERR "entry_handler: kmalloc failed\n");
+        return -ENOMEM;
+    }
 
     dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento in unlink (dentry)
 
@@ -847,6 +892,7 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
 
     if (is_within_protected_dirs(path)) {
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, eliminazione non permessa\n", path);
+        data->filename_handler = kstrdup(path, GFP_ATOMIC);
         kfree(path);
         regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
         return 0;
@@ -854,6 +900,7 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
 
     if (file_in_protected_paths_list(path)) {
         printk(KERN_INFO "Path %s trovato nella lista, eliminazione non permessa\n", path);
+        data->filename_handler = kstrdup(path, GFP_ATOMIC);
         kfree(path);
         regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
         return 0;
@@ -865,12 +912,12 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
 
 static int calculate_fingerprint(char* pathname, char* hash_out){
     
-    //char *path;
     struct file *file;
     char *file_content;
     int file_size;
     int ret = -1;
     mm_segment_t oldfs;
+    int i;
 
     printk("ENTRY FINGERPRINT");
     
@@ -915,6 +962,11 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
         filp_close(file, NULL);
         return ret;
     }
+
+    for (i = 0; i < SHA256_DIGEST_SIZE; i++) {
+        snprintf(hash_out + (i * 2), 3, "%02x", (unsigned int)hash_out[i] & 0xFF);
+    }
+    hash_out[SHA256_DIGEST_SIZE * 2] = '\0'; // Null terminator
     
     kfree(file_content);
     filp_close(file, NULL);
@@ -938,10 +990,10 @@ void handler_def_work(struct work_struct *work_data){
     }
 
     printk("SONO IN HANDLER DEF WORK  2222222");
-    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname);
+    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file);
 
 
-    ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
+    ret = calculate_fingerprint(pck_work->info_log->pathname_file, pck_work->info_log->hash_file_content); //0 == ok
     if (ret != 0) {
         printk(KERN_ERR "Impossibile calcolare l'hash per %s\n", pck_work->info_log->pathname);
         kfree(pck_work);
@@ -950,7 +1002,7 @@ void handler_def_work(struct work_struct *work_data){
 
     printk("SONO IN HANDLER DEF WORK dopo fingerprint");
 
-    file_log_output = filp_open(PATH_LOG_FILE, O_WRONLY, 0644);
+    file_log_output = filp_open(PATH_LOG_FILE, O_WRONLY | O_APPEND | O_CREAT, 0644);
     if (IS_ERR(file_log_output)) {
         int err = PTR_ERR(file_log_output);
         printk("Error on opening log file: %d \n", err);
@@ -959,7 +1011,7 @@ void handler_def_work(struct work_struct *work_data){
     }
 
     //formattazione pre scrittura file
-    snprintf(log_data, 256, "%d, %d, %u, %u, %s, %s\n", pck_work->info_log->tgid, pck_work->info_log->tid, pck_work->info_log->uid, pck_work->info_log->euid, pck_work->info_log->pathname, pck_work->info_log->hash_file_content);
+    snprintf(log_data, 256, "TGID: %d, TID: %d, UID: %u, EUID: %u, Exe_PATH: %s, HASH: %s\n", pck_work->info_log->tgid, pck_work->info_log->tid, pck_work->info_log->uid, pck_work->info_log->euid, pck_work->info_log->pathname, pck_work->info_log->hash_file_content);
 
     ret = kernel_write(file_log_output, log_data, strlen(log_data), &file_log_output->f_pos);
 
@@ -1041,6 +1093,8 @@ static void collect_info(const char *pathname){
     path_file = get_path_from_dentry(exe_dentry);
     info_log->pathname = kstrdup(path_file, GFP_ATOMIC); //cosi metto il comando
 
+    info_log->pathname_file = kstrdup(pathname, GFP_ATOMIC);
+
 
     path_buffer = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
     if (!path_buffer) {
@@ -1085,9 +1139,14 @@ cleanup:
 static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     the_regs->ax = -EACCES;
     printk("%s: actions blocked\n", MODNAME);
-    const char *pathname = (const char *)the_regs->di;
+    struct my_data *data = (struct my_data *)p->data;
+    if (data->filename_handler) {
+        printk(KERN_INFO "post_handler: blocking action and collecting info for %s\n", data->filename_handler);
+        collect_info(data->filename_handler);
+        //kfree(data->filename_handler);
+    }
 
-    collect_info(pathname);
+    //collect_info(pathname);
 
     return 0;
 }
