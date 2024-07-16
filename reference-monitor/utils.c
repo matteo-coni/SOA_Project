@@ -43,7 +43,6 @@ char *get_path_from_dentry(struct dentry *dentry) {
 
 int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
     
-    int i;
     int ret = 0;
     struct crypto_shash *alg;
     struct shash_desc *desc;
@@ -85,11 +84,10 @@ int do_sha256(const char *pwd_input, size_t len_pwd, char *output_hash){
 
 
 char* get_pwd_encrypted(const char *pwd) {
-    // dummy
-    printk(KERN_INFO "prova encryption pwd = %s", pwd);
 
     int i;
     char *pwd_hash;
+    char hash[SHA256_DIGEST_SIZE]; //come buffer per il ritorno
     int hash_len = SHA256_DIGEST_SIZE;
 
     // Allocate memory for the hash output
@@ -99,7 +97,7 @@ char* get_pwd_encrypted(const char *pwd) {
         return NULL;
     }
 
-    char hash[SHA256_DIGEST_SIZE]; //come buffer per il ritorno
+    
     if (do_sha256(pwd, strlen(pwd), hash)) {
         kfree(pwd_hash);
         return NULL;

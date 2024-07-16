@@ -33,7 +33,7 @@ struct reference_monitor reference_monitor;
 unsigned long cr0;
 spinlock_t defwork_lock;
 
-unsigned long *hack_ni_syscall; //prova
+unsigned long *hack_ni_syscall; 
 
 static long syscall_table_addr = 0x0;
 module_param(syscall_table_addr, ulong, 0644);
@@ -66,11 +66,10 @@ ino_t get_inode_from_path(const char *path){
     int ret;
     ino_t inode;
 
-    //printk("%s: eccolo il path", path);
+    //printk("%s: path", path);
 
     ret = kern_path(path, LOOKUP_FOLLOW, &file_path);
     if (ret){
-        //printk("%s: Error during get kernel_path from path"); //commenta per evitare errori negli handler
         return -EINVAL;
     }
     // ottieni info sull'inode
@@ -93,8 +92,6 @@ int file_in_protected_paths_list(char *filename_path){
         return 0;
     }
 
-    //printk("SONO DOPO La GET INODE");
-
     rcu_read_lock();
     list_for_each_entry_safe(entry, tmp, &reference_monitor.protected_paths, list){
         if (entry->inode_n == inode_number) {
@@ -105,9 +102,7 @@ int file_in_protected_paths_list(char *filename_path){
     exit:
     rcu_read_unlock();
 
-    // path isn't in protected_paths lists
-
-    return ret; //ret 1 if present
+    return ret; //ret 1 if present, 0 altrimenti
 }
 
 /* system call SWITCH_STATE reference monitor */
@@ -120,7 +115,6 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
 
     char* kernel_pwd;
     char* kernel_state;
-    printk("OKKKOOKOKOK iniziale");
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -128,15 +122,12 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
         return -EPERM;
     }
 
-    printk("OKKKOOKOKOK");
-
     /* kmalloc pwd in kernel space */
     kernel_pwd = kmalloc(PWD_LEN, GFP_KERNEL);
 	if (!kernel_pwd){
 		printk("%s: Error kernel password allocation", MODNAME);
         	return -ENOMEM; 
 		}
-	printk("OKKKOOKOKOK 1111111111111");
 
 	// Copy pwd from user space
 	if (copy_from_user(kernel_pwd, password, PWD_LEN)) {
@@ -145,14 +136,12 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
 		return -EFAULT;
 	}
 
-    printk("OKKKOOKOKOK 2222222222222");
     /* check if insert pwd is valid */
     if (strcmp(reference_monitor.password, get_pwd_encrypted(kernel_pwd)) != 0){
         printk("%s: Invalid password, change state not allowed", MODNAME);
         kfree(kernel_pwd);
         return -EACCES;
     }
-    printk("OKKKOOKOKOK post check pwd");
     kfree(kernel_pwd);
 
     kernel_state = kmalloc(20, GFP_KERNEL);
@@ -161,7 +150,6 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
         	return -ENOMEM; 
 		}
 	
-
 	// Copy pwd from user space
 	if (copy_from_user(kernel_state, state, PWD_LEN)) {
 		printk("%s: Error during state copy from user",MODNAME);
@@ -197,7 +185,6 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
     } else {
         printk("SONO nell'ELSE ") ;
     }
-    printk("OKKKOOKOKOK 88888888");
     
     kfree(kernel_state);
 
@@ -267,7 +254,7 @@ asmlinkage long sys_add_protected_paths(char *path, char* password) {
     /* ADD FILE IN LIST */
     entry_list = kmalloc(sizeof(struct protected_paths_entry), GFP_KERNEL);
     entry_list->path = kstrdup(kernel_path, GFP_KERNEL);
-    entry_list->inode_n = get_inode_from_path(kernel_path); //TODO: RISOLVI QUA
+    entry_list->inode_n = get_inode_from_path(kernel_path); 
     
     spin_lock(&reference_monitor.rf_lock);
 
@@ -286,7 +273,7 @@ asmlinkage long sys_add_protected_paths(char *path, char* password) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _rm_protected_paths, char *, path, char* , password) {
 #else 
-asmlinkage long sys_rm_protected_paths(char *path) {
+asmlinkage long sys_rm_protected_paths(char *path, char __user *  password) {
 #endif
 
     char* kernel_pwd;
@@ -294,7 +281,7 @@ asmlinkage long sys_rm_protected_paths(char *path) {
     struct protected_paths_entry *entry_list, *tmp; //entry_list is an entry of list
     ino_t inode_number;
 
-    printk("STO IN REMOVE SYS");
+    printk(KERN_INFO "Remove path");
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -346,7 +333,7 @@ asmlinkage long sys_rm_protected_paths(char *path) {
         return -EINVAL;
     }
 
-    inode_number = get_inode_from_path(kernel_path); //funzione 
+    inode_number = get_inode_from_path(kernel_path);
     if (inode_number == 0)
         //not valid path
         return 0;
@@ -522,8 +509,6 @@ int ref_monitor_initialize(void){
 
 static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
 
-
-        //printk("PROVA VFS OPEN HANDLER ENTRY FUNCTION");
         const struct path *path;
         struct file* file;
         struct dentry *dentry;
@@ -547,15 +532,11 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 
         if (((mode & FMODE_WRITE) || (mode & FMODE_PWRITE)) && ((reference_monitor.state == ON || reference_monitor.state == REC_ON)) ) {
 
-                /* retrieve path */
                 full_path = get_path_from_dentry(dentry);
-
-                //printk("PROVA VFS OPEN HANDLER");
                 
                 if (file_in_protected_paths_list(full_path)) {
-                        /* set message */
                 
-                        printk("Path %s trovato nella lista, operazione non permessa", full_path); //prova test ok funziona
+                        printk("Path %s trovato nella lista, operazione non permessa", full_path); 
                         data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
 
                         kfree(full_path);
@@ -563,15 +544,12 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
                         /* schedule return handler execution, that will update the return value (fd) to -1  */
                         return 0;
                 }
-
-                 kfree(full_path);
-                
+                 kfree(full_path);        
         }
 
         return 1;
    
 }
-//FINE PROVA
 
 static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     
@@ -601,7 +579,7 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 
     if (file_in_protected_paths_list(full_path)) {
             
-        printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path); //prova test ok funziona
+        printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path);
         data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
                        
         kfree(full_path);
@@ -662,7 +640,7 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     }
 
     printk("sono in handler mkdir");
-    data = (struct my_data *)ri->data; //pr
+    data = (struct my_data *)ri->data; //per pathname
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
@@ -702,7 +680,6 @@ static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs
         return 1;
     }
 
-    //printk(KERN_INFO "sono in handler create\n");
     data = (struct my_data *)ri->data; //pr
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
@@ -768,16 +745,15 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     if (is_within_protected_dirs(old_path) || is_within_protected_dirs(new_path) ) {
         printk(KERN_INFO "Path %s o %s è all'interno di una directory protetta, creazione link non permessa\n", old_path, new_path);
         data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
-        //kfree(old_path);
+        kfree(old_path);
         kfree(new_path);
-         //pr
         return 0;
     }
 
     if (file_in_protected_paths_list(old_path)) {
             
         printk(KERN_INFO "Path %s trovato nella lista, creazione link non permessa\n", old_path); //prova test ok funziona
-        //kfree(old_path);
+        kfree(old_path);
         data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
         kfree(new_path); 
         printk("prova %s e oldpath: %s", data->filename_handler, old_path);
@@ -785,7 +761,7 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
         return 0;
     }
 
-    //kfree(old_path);
+    kfree(old_path);
     kfree(new_path);
     return 1; //no handler post
 }
@@ -839,8 +815,7 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
         return 1;
     }
 
-    //printk(KERN_INFO "sono in handler unlink\n");
-    data = (struct my_data *)p->data; //pr
+    data = (struct my_data *)p->data; 
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
@@ -898,7 +873,6 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
          
     }
 
-    
     file_content = kmalloc(file_size, GFP_KERNEL);
     if (!file_content) {
         printk( "Failed to allocate memory for file content\n");
@@ -983,7 +957,6 @@ static void collect_info(const char *pathname){
     struct mm_struct *mm;
     struct file *exe_file;
     char *path_buffer;
-    char *program_path;
     struct dentry *exe_dentry;
     char *path_file;
 
@@ -1046,19 +1019,11 @@ static void collect_info(const char *pathname){
         return;
     }
 
-    program_path = d_path(&exe_file->f_path, path_buffer, MAX_PATH_LEN);
-    if (IS_ERR(program_path)) {
-        kfree(path_buffer);
-        kfree(packed_work);
-        return;
-    }
-
     packed_work->info_log = info_log;
 
-    //snprintf(packed_work->info_log->pathname, MAX_PATH_LEN, "%s", program_path);
     kfree(path_buffer);
 
-    wq = alloc_workqueue("REFERENCE_MONITOR_WORKQUEUE", WQ_MEM_RECLAIM, 1);
+    wq = alloc_workqueue("REFERENCE_MONITOR_WORKQUEUE", WQ_MEM_RECLAIM, 1); //queue for deferred work
 
     INIT_WORK(&packed_work->work, handler_def_work); 
     if (!queue_work(wq, &packed_work->work)) {
@@ -1092,8 +1057,6 @@ static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
         collect_info(data->filename_handler);
         //kfree(data->filename_handler);
     }
-
-    //collect_info(pathname);
 
     return 0;
 }
@@ -1177,8 +1140,7 @@ int init_module(void) {
     char *pwd_encrypted = NULL;;
 
     printk(KERN_INFO "Initializing reference monitor\n");
-    //printk(KERN_INFO "password = %s\n", password);
-
+    
     /*add new syscall*/
     ret = inizialize_syscall();
     if (ret != 0){
@@ -1195,7 +1157,7 @@ int init_module(void) {
         return -1;
     }
 
-    pwd_encrypted = get_pwd_encrypted(password); //funzione ok ma non ritorna correttammente il valore
+    pwd_encrypted = get_pwd_encrypted(password); 
     if (!pwd_encrypted) {
         printk(KERN_ERR "Failed to encrypt password\n");
         return -ENOMEM;
