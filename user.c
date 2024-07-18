@@ -106,7 +106,7 @@ void do_add_path(void){
         return;
     }
 
-    if((ret = syscall(156,&buffer_path,&buffer_pwd)) == 0){
+    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){ //156 su 5.15, 174 su 4.15
         printf("-- Adding of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute adding path! -- \n");
@@ -159,7 +159,7 @@ void do_remove_path(void){
         return;
     }
 
-    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){
+    if((ret = syscall(177,&buffer_path,&buffer_pwd)) == 0){
         printf("-- Removing of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute removing path! -- \n");
@@ -191,7 +191,7 @@ void do_print_paths(void){
         return;
     }
 
-    if((ret = syscall(177,output,&buffer_pwd)) == 0){
+    if((ret = syscall(178,output,&buffer_pwd)) == 0){
         printf("\n-- Printing of paths executed successfully ! -- \n");
         printf("The existing paths are: \n %s",output);
     } else {

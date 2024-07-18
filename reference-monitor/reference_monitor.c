@@ -194,7 +194,7 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _add_protected_paths, char *, path, char* , password) {
 #else 
-asmlinkage long sys_add_protected_paths(char *path, char* password) {
+asmlinkage long sys_add_protected_paths(char *path, char __user * password) {
 #endif
 
     char* kernel_pwd;
@@ -356,7 +356,7 @@ asmlinkage long sys_rm_protected_paths(char *path, char __user *  password) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
 __SYSCALL_DEFINEx(2, _print_protected_paths, char*, output_buff, char*, password){
 #else
-asmlinkage int sys_print_protected_paths;(char* output_buff, char __user * password){
+asmlinkage int sys_print_protected_paths(char* output_buff, char __user * password){
 #endif
 
     char* kernel_pwd;
@@ -753,10 +753,11 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     if (file_in_protected_paths_list(old_path)) {
             
         printk(KERN_INFO "Path %s trovato nella lista, creazione link non permessa\n", old_path); //prova test ok funziona
-        kfree(old_path);
+        
         data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
-        kfree(new_path); 
         printk("prova %s e oldpath: %s", data->filename_handler, old_path);
+        kfree(old_path);
+        kfree(new_path);
     
         return 0;
     }
