@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <stdlib.h>
-
+#include <linux/version.h>
 
 #define OUTPUT_BUFFER_SIZE (4096 * 512) //4096 is PATH_MAX
 
@@ -55,7 +55,7 @@ void do_switch_state(void){
         printf("-- Change state of reference monitor to %s executed successfully ! -- \n", buffer_state);
     } else {
         printf("-- Failed to execute change state! -- \n");
-        perror("\nErrore nella syscall_switch_state"); //////PROVA
+        perror("\nErrore nella syscall_switch_state"); 
     }
 
     return;
@@ -105,12 +105,15 @@ void do_add_path(void){
         printf("Error input pwd, exit...");
         return;
     }
-
-    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){ //156 su 5.15, 174 su 4.15
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
+    if((ret = syscall(156,&buffer_path,&buffer_pwd)) == 0){ //156 su 5.15, 174 su 4.15
+#else
+    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){
+#endif
         printf("-- Adding of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute adding path! -- \n");
-        perror("\nErrore nella syscall _add_protected_paths"); //////PROVA
+        perror("\nErrore nella syscall _add_protected_paths"); 
     }
 
 }
@@ -163,7 +166,7 @@ void do_remove_path(void){
         printf("-- Removing of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute removing path! -- \n");
-        perror("\nErrore nella syscall _rm_protected_paths"); //////PROVA
+        perror("\nErrore nella syscall _rm_protected_paths");
     }
 }
 
