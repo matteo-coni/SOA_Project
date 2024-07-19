@@ -779,9 +779,10 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
 
     printk(KERN_INFO "sono in handler symlink\n");
 
-    old_dentry = (struct dentry *)regs->dx;  // Su x86_64, rdx corrisponde al terzo argomento (old_dentry)
+    //old_dentry = (struct dentry *)regs->dx;  // Su x86_64, rdx corrisponde al terzo argomento (old_dentry)
+    //old_path = get_path_from_dentry(old_dentry);
 
-    old_path = get_path_from_dentry(old_dentry);
+    old_path = (char*)regs->dx;
 
     data = (struct my_data *)p->data; //pr
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -856,57 +857,63 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
     
     struct file *file;
     char *file_content;
+    mm_segment_t old_fs;
+    loff_t pos = 0;
     int file_size;
-    int ret = -1;
+    int ret;
+    unsigned char hash_bin[SHA256_DIGEST_SIZE];
+    char hash_hex[SHA256_DIGEST_SIZE * 2 + 1]; // Buffer per rappresentazione esadecimale
     int i;
-    
-    file = filp_open(pathname, O_RDONLY, 0644);
-    if (!file || IS_ERR(file)) {
-        printk("Failed to open file %s with error %ld\n", pathname, PTR_ERR(file));
-        ret = -ENOENT;
+
+    file = filp_open(pathname, O_RDONLY, 0);
+    if (IS_ERR(file)) {
+        printk(KERN_ERR "Failed to open file %s\n", pathname);
+        return PTR_ERR(file);
     }
 
     file_size = i_size_read(file_inode(file));
-    if (file_size <= 0) {
-        printk("Invalid file size\n");
+    if (file_size < 0) {
+        printk(KERN_ERR "Invalid file size\n");
         filp_close(file, NULL);
-        ret = -EINVAL;
-         
+        return -EINVAL;
     }
 
     file_content = kmalloc(file_size, GFP_KERNEL);
     if (!file_content) {
-        printk( "Failed to allocate memory for file content\n");
+        printk(KERN_ERR "Failed to allocate memory for file content\n");
         filp_close(file, NULL);
-        ret = -ENOMEM;
+        return -ENOMEM;
     }
 
+    //old_fs = get_fs();
+    //set_fs(KERNEL_DS);
+    ret = kernel_read(file, file_content, file_size, &pos);
+    //set_fs(old_fs);
 
-    ret = kernel_read(file, file_content, file_size, &file->f_pos);
     if (ret < 0) {
-        printk("Failed to read file content\n");
+        printk(KERN_ERR "Failed to read file content\n");
         kfree(file_content);
         filp_close(file, NULL);
         return ret;
     }
 
-    ret = do_sha256(file_content, file_size, hash_out);
+    ret = do_sha256(file_content, file_size, hash_bin);
+    kfree(file_content);
+    filp_close(file, NULL);
+
     if (ret < 0) {
         printk(KERN_ERR "Failed to calculate SHA-256 hash\n");
-        kfree(file_content);
-        filp_close(file, NULL);
         return ret;
     }
 
     for (i = 0; i < SHA256_DIGEST_SIZE; i++) {
-        snprintf(hash_out + (i * 2), 3, "%02x", (unsigned int)hash_out[i] & 0xFF);
+        snprintf(hash_hex + (i * 2), 3, "%02x", hash_bin[i]);
     }
-    hash_out[SHA256_DIGEST_SIZE * 2] = '\0'; // Null terminator
-    
-    kfree(file_content);
-    filp_close(file, NULL);
+    hash_hex[SHA256_DIGEST_SIZE * 2] = '\0'; // Null terminator
 
-    return 0; //0 = success
+    strncpy(hash_out, hash_hex, SHA256_DIGEST_SIZE * 2 + 1);
+
+    return 0; //o ==sucess
 }
 
 void handler_def_work(struct work_struct *work_data){
