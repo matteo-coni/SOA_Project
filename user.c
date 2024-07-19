@@ -161,8 +161,11 @@ void do_remove_path(void){
         printf("Error input pwd, exit...");
         return;
     }
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)    
+    if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){
+#else
     if((ret = syscall(177,&buffer_path,&buffer_pwd)) == 0){
+#endif
         printf("-- Removing of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute removing path! -- \n");
@@ -193,8 +196,11 @@ void do_print_paths(void){
         printf("Error input pwd, exit...");
         return;
     }
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)    
+    if((ret = syscall(177,output,&buffer_pwd)) == 0){
+#else
     if((ret = syscall(178,output,&buffer_pwd)) == 0){
+#endif
         printf("\n-- Printing of paths executed successfully ! -- \n");
         printf("The existing paths are: \n %s",output);
     } else {
