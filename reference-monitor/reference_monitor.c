@@ -255,6 +255,7 @@ asmlinkage long sys_add_protected_paths(char *path, char __user * password) {
     entry_list = kmalloc(sizeof(struct protected_paths_entry), GFP_KERNEL);
     entry_list->path = kstrdup(kernel_path, GFP_KERNEL);
     entry_list->inode_n = get_inode_from_path(kernel_path); 
+	printk("inode del file: %lu", entry_list->inode_n);
     
     spin_lock(&reference_monitor.rf_lock);
 
