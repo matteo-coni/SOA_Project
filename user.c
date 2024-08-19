@@ -35,9 +35,7 @@ void do_switch_state(void){
             printf("State is invalid, please insert new state... \n");
         }
        
-    } while ((c = getchar()) != '\n' && c != EOF) {
-            // Discard characters
-        }
+    }
 
     printf("Enter password: ");
     if (fgets(buffer_pwd, sizeof(buffer_pwd),stdin)!=NULL){
@@ -57,6 +55,7 @@ void do_switch_state(void){
         printf("-- Failed to execute change state! -- \n");
         perror("\nErrore nella syscall_switch_state"); 
     }
+    //problema qua
 
     return;
 }
@@ -90,9 +89,9 @@ void do_add_path(void){
             else
                 break;
         }
-    } while ((c = getchar()) != '\n' && c != EOF) {
+    } /*while ((c = getchar()) != '\n' && c != EOF) {
             // Discard characters
-        }
+        }*/
 
 
     printf("Enter password: ");
@@ -218,12 +217,12 @@ void select_command(int cmd){
         case 1: 
             printf("---------------------------------------- \n");
             printf("-- Switching reference monitor state --\n");
-            do_switch_state();
+            do_switch_state(); //problema !!!
             break;
         case 2:
             printf("---------------------------------------- \n");
             printf("-- Adding path to protected list     --\n");
-            do_add_path();
+            do_add_path(); //problema
             break;
         case 3:
             printf("---------------------------- \n");
@@ -245,7 +244,7 @@ void select_command(int cmd){
 
 int main(int argc, char** argv){
 
-    char *cmd_str;
+    char cmd_str[15];
     char *endptr;
     int cmd, c;
 
@@ -275,10 +274,9 @@ int main(int argc, char** argv){
 
         select_command(cmd);
         //fai flush stdin per operazioni successive
+        while ((c = getchar()) != '\n' && c != EOF); 
 
-    } while ((c = getchar()) != '\n' && c != EOF) {
-            // Discard characters
-        }
+    }
 
     return 0;
 }

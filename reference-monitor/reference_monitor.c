@@ -145,8 +145,8 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
     kfree(kernel_pwd);
 
     kernel_state = kmalloc(20, GFP_KERNEL);
-	if (!state){
-		printk("%s: Error kernel stateallocation", MODNAME);
+	if (!kernel_state){
+		printk("%s: Error kernel_state allocation", MODNAME);
         	return -ENOMEM; 
 		}
 	
@@ -157,7 +157,8 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
 		return -EFAULT;
 	}
     printk("prova state kernel: %s", kernel_state);
-    //spin_lock(&reference_monitor.rf_lock);
+    
+    spin_lock(&reference_monitor.rf_lock);
     
     if(strcmp(kernel_state, "ON")==0){
         
@@ -185,6 +186,7 @@ asmlinkage int sys_switch_state(char* state, char __user* password){
     } else {
         printk("SONO nell'ELSE ") ;
     }
+    spin_unlock(&reference_monitor.rf_lock);
     
     kfree(kernel_state);
 
