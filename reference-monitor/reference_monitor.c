@@ -880,6 +880,7 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
     char hash_hex[SHA256_DIGEST_SIZE * 2 + 1]; // Buffer per rappresentazione esadecimale
     int i;
 
+    printk("PATHNAME PRE OPEN = %s", pathname);
     file = filp_open(pathname, O_RDONLY, 0);
     if (IS_ERR(file)) {
         printk(KERN_ERR "Failed to open file %s\n", pathname);
@@ -942,9 +943,10 @@ void handler_def_work(struct work_struct *work_data){
         printk("Error during packed_work container_of");
     }
 
-    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file);
+    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file); //errato
 
     //todo: cambiare pathname_file con il program file, dovrebbe essere "pathname" OK
+    printk("PATHNAME PRE FUNZIONE = %s", pck_work->info_log->pathname);
     ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
     if (ret != 0) {
         printk(KERN_ERR "Impossibile calcolare l'hash per %s\n", pck_work->info_log->pathname);
@@ -1032,6 +1034,9 @@ static void collect_info(const char *pathname){
 
     exe_dentry = mm->exe_file->f_path.dentry;
     path_file = get_path_from_dentry(exe_dentry);
+
+    printk("PROVA COLLECT INFO PATH_FILEPROGRAM: %s", path_file);
+
     info_log->pathname = kstrdup(path_file, GFP_ATOMIC); //cosi metto il comando
 
     info_log->pathname_file = kstrdup(pathname, GFP_ATOMIC);

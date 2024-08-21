@@ -25,14 +25,14 @@ char *get_path_from_dentry(struct dentry *dentry) {
 
         len = strlen(ret);
 
-        full_path = kmalloc(len + 2, GFP_ATOMIC);
+        full_path = kmalloc(len + 1, GFP_ATOMIC);
         if (!full_path) {
                 pr_err("error in kmalloc allocation (get_path_from_dentry)\n");
                 return NULL;
         }
 
         strncpy(full_path, ret, len);
-        full_path[len + 1] = '\0';
+        full_path[len] = '\0';
 
         free_page((unsigned long)buffer);
         return full_path;
