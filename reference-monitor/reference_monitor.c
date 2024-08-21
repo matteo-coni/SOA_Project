@@ -399,7 +399,7 @@ asmlinkage int sys_print_protected_paths(char* output_buff, char __user * passwo
 
     kfree(kernel_pwd);
 
-    kernel_output = kmalloc(OUTPUT_BUFFER_SIZE, GFP_KERNEL);
+    kernel_output = kzalloc(OUTPUT_BUFFER_SIZE, GFP_KERNEL);
     if (!kernel_output){
 		printk("%s: Error during kernel_output allocation", MODNAME);
         	return -ENOMEM; 
@@ -411,7 +411,7 @@ asmlinkage int sys_print_protected_paths(char* output_buff, char __user * passwo
 
         rem_space_output = OUTPUT_BUFFER_SIZE - busy_space;
 
-        if((written_chars = snprintf(kernel_output + strlen(kernel_output), rem_space_output, "Path %s, inode_number -> %lu\n", entry_list->path, entry_list->inode_n) < 0)){
+        if((written_chars = snprintf(kernel_output + strlen(kernel_output), rem_space_output, "Path %s, inode_number -> %lu\n", entry_list->path, entry_list->inode_n)) < 0){
             printk("%s: Failed to copy path in kernel_output", MODNAME);
             ret = -EFAULT;
             spin_unlock(&reference_monitor.rf_lock);
@@ -519,9 +519,15 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
         char *full_path;
         struct my_data *data;
 
+        if(reference_monitor.state == OFF || reference_monitor.state == REC_OFF){
+            return 1;
+        }
+
+        //printk("SONO IN HANDLER VFS OPEN");
+
         /* retrieve parameters */
         path = (const struct path *)regs->di;
-        file = (struct file *)regs->si;
+        file = (struct file *)regs->si; 
 
         data = (struct my_data *)ri->data; //pr
         data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -531,14 +537,20 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
         }
 
         dentry = path->dentry;
-        mode = file->f_mode;
+        mode = file->f_mode; //il problema sta qui
 
-        if (((mode & FMODE_WRITE) || (mode & FMODE_PWRITE)) && ((reference_monitor.state == ON || reference_monitor.state == REC_ON)) ) {
+        //printk(KERN_INFO "file mode: 0x%x\n", mode); //debug
+        spin_lock(&reference_monitor.rf_lock);
+
+        if (/*((mode & FMODE_WRITE) || (mode & FMODE_PWRITE)) &&*/ ((reference_monitor.state == ON || reference_monitor.state == REC_ON)) ) {
 
                 full_path = get_path_from_dentry(dentry);
+
+                printk("full path vfs open: %s", full_path);
                 
                 if (file_in_protected_paths_list(full_path)) {
-                
+
+                        spin_unlock(&reference_monitor.rf_lock);
                         printk("Path %s trovato nella lista, operazione non permessa", full_path); 
                         data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
 
@@ -549,7 +561,7 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
                 }
                  kfree(full_path);        
         }
-
+        spin_unlock(&reference_monitor.rf_lock);
         return 1;
    
 }
@@ -888,10 +900,10 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
         return -ENOMEM;
     }
 
-    //old_fs = get_fs();
-    //set_fs(KERNEL_DS);
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
     ret = kernel_read(file, file_content, file_size, &pos);
-    //set_fs(old_fs);
+    set_fs(old_fs);
 
     if (ret < 0) {
         printk(KERN_ERR "Failed to read file content\n");
@@ -932,7 +944,8 @@ void handler_def_work(struct work_struct *work_data){
 
     printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file);
 
-    ret = calculate_fingerprint(pck_work->info_log->pathname_file, pck_work->info_log->hash_file_content); //0 == ok
+    //todo: cambiare pathname_file con il program file, dovrebbe essere "pathname" OK
+    ret = calculate_fingerprint(pck_work->info_log->pathname, pck_work->info_log->hash_file_content); //0 == ok
     if (ret != 0) {
         printk(KERN_ERR "Impossibile calcolare l'hash per %s\n", pck_work->info_log->pathname);
         kfree(pck_work);
@@ -1084,12 +1097,12 @@ static int init_kretprobe(void){
     int ret;
 
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
-    set_kretprobe(&delete_retprobe, "may_delete", may_delete_handler);
-    set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
-    set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
-    set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
-    set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
-    set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);
+    //set_kretprobe(&delete_retprobe, "may_delete", (kretprobe_handler_t)may_delete_handler);
+    //set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
+    //set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
+    //set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
+    //set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
+    //set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);*/
     
     
     printk("INIT KRETPROBE");
@@ -1121,7 +1134,7 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_create registered\n");
-
+    
     ret = register_kretprobe(&security_inode_link_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for inode_link failed, returned %d\n", ret);
