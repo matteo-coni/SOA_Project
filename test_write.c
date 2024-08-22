@@ -12,7 +12,7 @@ int main() {
         perror("open");
         return EXIT_FAILURE;
     }
-
+    
     if (write(fd, "test", 4) == -1) {
         perror("write");
         close(fd);

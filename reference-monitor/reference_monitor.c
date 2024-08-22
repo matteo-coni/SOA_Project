@@ -541,12 +541,12 @@ static int vfs_open_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 
         //printk(KERN_INFO "file mode: 0x%x\n", mode); //debug
         spin_lock(&reference_monitor.rf_lock);
-
+        //cosi funziona ma in tutte le modalità
         if (/*((mode & FMODE_WRITE) || (mode & FMODE_PWRITE)) &&*/ ((reference_monitor.state == ON || reference_monitor.state == REC_ON)) ) {
 
                 full_path = get_path_from_dentry(dentry);
 
-                printk("full path vfs open: %s", full_path);
+                /*RISOLVI USANDO FLAGS INVECE CHE mode*/
                 
                 if (file_in_protected_paths_list(full_path)) {
 
@@ -592,8 +592,10 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 
     full_path = get_path_from_dentry(dentry);
 
+    spin_lock(&reference_monitor.rf_lock);
+
     if (file_in_protected_paths_list(full_path)) {
-            
+        spin_unlock(&reference_monitor.rf_lock);    
         printk("Path %s trovato nella lista, operazione eliminazione non permessa", full_path);
         data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
                        
@@ -604,13 +606,11 @@ static int may_delete_handler(struct kretprobe_instance *ri, struct pt_regs *reg
     }
 
     kfree(full_path);
-
+    spin_unlock(&reference_monitor.rf_lock);
     return 1; //no post handler
 }
 
 static int is_within_protected_dirs(const char *full_path) {
-    
-
     struct protected_paths_entry *entry;
     char *path;
     char *slash;
@@ -624,9 +624,11 @@ static int is_within_protected_dirs(const char *full_path) {
 
     spin_lock(&reference_monitor.rf_lock);
 
+    //gerarchia directory
     while ((slash = strrchr(path, '/')) != NULL) {
-        *slash = '\0'; // Termina la stringa al carattere slash
-
+        
+        *slash = '\0'; 
+        
         list_for_each_entry(entry, &reference_monitor.protected_paths, list) {
             if (strcmp(path, entry->path) == 0) {
                 found = 1;
@@ -634,15 +636,22 @@ static int is_within_protected_dirs(const char *full_path) {
             }
         }
 
-        if (found)
+        if (found) {
             break;
+        }
+
+        // Se siamo alla root (path vuoto), usciamo dal loop
+        if (slash == path) {
+            break;
+        }
     }
 
     spin_unlock(&reference_monitor.rf_lock);
-
     kfree(path);
+
     return found;
 }
+
 
 static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
 
@@ -655,12 +664,12 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     }
 
     printk("sono in handler mkdir");
-    data = (struct my_data *)ri->data; //per pathname
+    /*data = (struct my_data *)ri->data; //per pathname
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
         return -ENOMEM;
-    }
+    }*/
 
 
     dentry = (struct dentry *)regs->si; //si perché su x86_64 è il secondo argomento e corrisponde a dentry nella mkdir
@@ -671,15 +680,19 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
         return 1;
     }
 
+    spin_lock(&reference_monitor.rf_lock);
+
     if (is_within_protected_dirs(full_path)) {
+        spin_unlock(&reference_monitor.rf_lock);
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
-        data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
+        //data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
         kfree(full_path);
         //regs->ax = -EACCES;
         return 0; //post handler
     }
 
     kfree(full_path);
+    spin_unlock(&reference_monitor.rf_lock);
 
     return 1; //no post handler
 }
@@ -730,9 +743,12 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
     char *old_path, *new_path;
     struct my_data *data;
 
+    //spin_lock(&reference_monitor.rf_lock);
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
+        //spin_unlock(&reference_monitor.rf_lock);
         return 1;
     }
+    //spin_unlock(&reference_monitor.rf_lock);
 
     printk(KERN_INFO "Handler link\n");
 
@@ -749,34 +765,35 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
         return 1;
     }
 
-    data = (struct my_data *)ri->data; //pr
+    /*data = (struct my_data *)ri->data; //pr
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
         return -ENOMEM;
-    }
+    }*/
 
+    //spin_lock(&reference_monitor.rf_lock);
 
     if (is_within_protected_dirs(old_path) || is_within_protected_dirs(new_path) ) {
+        //spin_unlock(&reference_monitor.rf_lock);
         printk(KERN_INFO "Path %s o %s è all'interno di una directory protetta, creazione link non permessa\n", old_path, new_path);
-        data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
+        //data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
         kfree(old_path);
         kfree(new_path);
         return 0;
     }
 
     if (file_in_protected_paths_list(old_path)) {
-            
+        //spin_unlock(&reference_monitor.rf_lock);    
         printk(KERN_INFO "Path %s trovato nella lista, creazione link non permessa\n", old_path); //prova test ok funziona
         
-        data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
-        printk("prova %s e oldpath: %s", data->filename_handler, old_path);
+        //data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
+        //printk("prova %s e oldpath: %s", data->filename_handler, old_path);
         kfree(old_path);
-        kfree(new_path);
-    
+        //kfree(new_path);
         return 0;
     }
-
+    //spin_unlock(&reference_monitor.rf_lock);
     kfree(old_path);
     kfree(new_path);
     return 1; //no handler post
@@ -943,7 +960,7 @@ void handler_def_work(struct work_struct *work_data){
         printk("Error during packed_work container_of");
     }
 
-    printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file); //errato
+    //printk("handler_def_work: fingerprint for path %s", pck_work->info_log->pathname_file); //errato
 
     //todo: cambiare pathname_file con il program file, dovrebbe essere "pathname" OK
     printk("PATHNAME PRE FUNZIONE = %s", pck_work->info_log->pathname);
@@ -976,7 +993,7 @@ void handler_def_work(struct work_struct *work_data){
 }
 
 /* function for collect info like as TID, TGID, UID, EUID and schedule deferred work */
-static void collect_info(const char *pathname){
+static void collect_info(void){ /*const char *pathname*/
 
     struct info_log *info_log;
     struct packed_work *packed_work;
@@ -987,10 +1004,10 @@ static void collect_info(const char *pathname){
     char *path_file;
 
     //spin_lock(&defwork_lock);
-    if (!pathname) {
+    /*if (!pathname) {
         printk(KERN_ERR "collect_info: pathname is NULL\n");
         return;
-    }
+    }*/
 
     info_log = kmalloc(sizeof(struct info_log), GFP_ATOMIC);
         if (!info_log) {
@@ -1039,7 +1056,7 @@ static void collect_info(const char *pathname){
 
     info_log->pathname = kstrdup(path_file, GFP_ATOMIC); //cosi metto il comando
 
-    info_log->pathname_file = kstrdup(pathname, GFP_ATOMIC);
+    //info_log->pathname_file = kstrdup(pathname, GFP_ATOMIC);
 
 
     path_buffer = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
@@ -1081,11 +1098,12 @@ static int post_handler(struct kretprobe_instance *p, struct pt_regs *the_regs){
     
     printk("%s: actions blocked\n", MODNAME);
     
-    if (data->filename_handler) {
+    //if (data->filename_handler) {
         printk(KERN_INFO "post_handler: blocking action and collecting info for %s\n", data->filename_handler);
-        collect_info(data->filename_handler);
+        //collect_info(data->filename_handler);
+        collect_info();
         //kfree(data->filename_handler);
-    }
+    //}
 
     return 0;
 }
@@ -1102,10 +1120,10 @@ static int init_kretprobe(void){
     int ret;
 
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
-    //set_kretprobe(&delete_retprobe, "may_delete", (kretprobe_handler_t)may_delete_handler);
+    set_kretprobe(&delete_retprobe, "may_delete", (kretprobe_handler_t)may_delete_handler);
     //set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
     //set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
-    //set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
+    set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
     //set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
     //set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);*/
     
@@ -1126,7 +1144,7 @@ static int init_kretprobe(void){
     }
     printk(KERN_INFO "kretprobe for may_delete registered\n");
     
-    ret = register_kretprobe(&security_mkdir_retprobe);
+    /*ret = register_kretprobe(&security_mkdir_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for mkdir failed, returned %d\n", ret);
         return ret;
@@ -1139,7 +1157,7 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_create registered\n");
-    
+    */
     ret = register_kretprobe(&security_inode_link_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for inode_link failed, returned %d\n", ret);
