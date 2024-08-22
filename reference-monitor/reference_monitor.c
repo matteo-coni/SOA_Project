@@ -1121,7 +1121,7 @@ static int init_kretprobe(void){
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
     set_kretprobe(&delete_retprobe, "may_delete", (kretprobe_handler_t)may_delete_handler);
     set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
-    //set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
+    set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
     set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
     //set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
     //set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);*/
@@ -1149,14 +1149,14 @@ static int init_kretprobe(void){
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_mkdir registered\n");
-    /*
+    
     ret = register_kretprobe(&security_inode_create_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for inode_create failed, returned %d\n", ret);
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_create registered\n");
-    */
+    
     ret = register_kretprobe(&security_inode_link_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for inode_link failed, returned %d\n", ret);
