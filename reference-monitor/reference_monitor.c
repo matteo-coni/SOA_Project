@@ -680,10 +680,9 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
         return 1;
     }
 
-    spin_lock(&reference_monitor.rf_lock);
 
     if (is_within_protected_dirs(full_path)) {
-        spin_unlock(&reference_monitor.rf_lock);
+        
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione non permessa\n", full_path);
         //data->filename_handler = kstrdup(full_path, GFP_ATOMIC);
         kfree(full_path);
@@ -692,7 +691,7 @@ static int security_mkdir_handler(struct kretprobe_instance *ri, struct pt_regs 
     }
 
     kfree(full_path);
-    spin_unlock(&reference_monitor.rf_lock);
+
 
     return 1; //no post handler
 }
@@ -708,12 +707,12 @@ static int security_create_handler(struct kretprobe_instance *ri, struct pt_regs
         return 1;
     }
 
-    data = (struct my_data *)ri->data; //pr
+    /*data = (struct my_data *)ri->data; //pr
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
         return -ENOMEM;
-    }
+    }*/
 
     dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento
 
@@ -1121,7 +1120,7 @@ static int init_kretprobe(void){
 
     set_kretprobe(&vfs_open_retprobe, "vfs_open", (kretprobe_handler_t)vfs_open_handler);
     set_kretprobe(&delete_retprobe, "may_delete", (kretprobe_handler_t)may_delete_handler);
-    //set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
+    set_kretprobe(&security_mkdir_retprobe, "security_inode_mkdir", (kretprobe_handler_t)security_mkdir_handler);
     //set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
     set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
     //set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
@@ -1144,13 +1143,13 @@ static int init_kretprobe(void){
     }
     printk(KERN_INFO "kretprobe for may_delete registered\n");
     
-    /*ret = register_kretprobe(&security_mkdir_retprobe);
+    ret = register_kretprobe(&security_mkdir_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for mkdir failed, returned %d\n", ret);
         return ret;
     }
     printk(KERN_INFO "kretprobe for security_inode_mkdir registered\n");
-
+    /*
     ret = register_kretprobe(&security_inode_create_retprobe);
     if (ret < 0) {
         printk(KERN_ERR "register_kretprobe for inode_create failed, returned %d\n", ret);
