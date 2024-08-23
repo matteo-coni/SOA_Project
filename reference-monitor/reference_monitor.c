@@ -804,7 +804,7 @@ static int security_link_handler(struct kretprobe_instance *ri, struct pt_regs *
 static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs *regs){
     
     struct dentry *old_dentry;
-    char *old_path;
+    char *new_path;
     struct my_data *data;
 
     if (reference_monitor.state == OFF || reference_monitor.state == REC_OFF) {
@@ -814,7 +814,7 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
     printk(KERN_INFO "sono in handler symlink\n");
 
     old_dentry = (struct dentry *)regs->si;  // Su x86_64, rdx corrisponde al terzo argomento (old_dentry)
-    old_path = get_path_from_dentry(old_dentry);
+    new_path = get_path_from_dentry(old_dentry);
 
     //old_path = (char*)regs->dx;
 
@@ -825,19 +825,28 @@ static int security_symlink_handler(struct kretprobe_instance *p, struct pt_regs
         return -ENOMEM;
     }*/
 
-    if (!old_path) {
+    if (!new_path) {
         printk(KERN_ERR "Failed to get full path in security_symlink_handler\n");
         return 1;
     }
-
-    if (is_within_protected_dirs(old_path)) {
-        printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione symlink non permessa\n", old_path);
+    printk("OLD PATH IS: %s", new_path);
+    
+    if (is_within_protected_dirs(new_path)) {
+        printk(KERN_INFO "Path %s è all'interno di una directory protetta, creazione symlink non permessa\n", new_path);
         //data->filename_handler = kstrdup(old_path, GFP_ATOMIC);
-        kfree(old_path);
+        kfree(new_path);
         return 0;
     }
 
-    kfree(old_path);
+    if (file_in_protected_paths_list(new_path)) {
+            
+        printk(KERN_INFO "Path %s trovato nella lista, creazione symlink non permessa\n", new_path); //prova test ok funziona
+        kfree(new_path);
+        
+        return 0;
+    }
+
+    kfree(new_path);
     return 1; 
 }
 
@@ -851,12 +860,12 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
         return 1;
     }
 
-    data = (struct my_data *)p->data; 
+    /*data = (struct my_data *)p->data; 
     data->filename_handler = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!data->filename_handler) {
         printk(KERN_ERR "entry_handler: kmalloc failed\n");
         return -ENOMEM;
-    }
+    }*/
 
     dentry = (struct dentry *)regs->si;  // Su x86_64, rsi corrisponde al secondo argomento in unlink (dentry)
 
@@ -869,17 +878,17 @@ static int security_unlink_handler(struct kretprobe_instance *p, struct pt_regs 
 
     if (is_within_protected_dirs(path)) {
         printk(KERN_INFO "Path %s è all'interno di una directory protetta, eliminazione non permessa\n", path);
-        data->filename_handler = kstrdup(path, GFP_ATOMIC);
+        //data->filename_handler = kstrdup(path, GFP_ATOMIC);
         kfree(path);
-        regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
+        //regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
         return 0;
     }
 
     if (file_in_protected_paths_list(path)) {
         printk(KERN_INFO "Path %s trovato nella lista, eliminazione non permessa\n", path);
-        data->filename_handler = kstrdup(path, GFP_ATOMIC);
+        //data->filename_handler = kstrdup(path, GFP_ATOMIC);
         kfree(path);
-        regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
+        //regs->ax = -EACCES; // Imposta il valore di ritorno a "Permesso negato"
         return 0;
     }
 
@@ -1127,7 +1136,7 @@ static int init_kretprobe(void){
     set_kretprobe(&security_inode_create_retprobe, "security_inode_create", (kretprobe_handler_t)security_create_handler);
     set_kretprobe(&security_inode_link_retprobe, "security_inode_link", (kretprobe_handler_t)security_link_handler);
     set_kretprobe(&security_inode_symlink_retprobe, "security_inode_symlink", (kretprobe_handler_t)security_symlink_handler);
-    //set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);*/
+    set_kretprobe(&security_inode_unlink_retprobe, "security_inode_unlink", (kretprobe_handler_t)security_unlink_handler);
     
     
     printk("INIT KRETPROBE");
