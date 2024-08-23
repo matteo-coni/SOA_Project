@@ -929,10 +929,10 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
         return -ENOMEM;
     }
 
-    old_fs = get_fs();
-    set_fs(KERNEL_DS);
+    //old_fs = get_fs();
+    //set_fs(KERNEL_DS);
     ret = kernel_read(file, file_content, file_size, &pos);
-    set_fs(old_fs);
+    //set_fs(old_fs);
 
     if (ret < 0) {
         printk(KERN_ERR "Failed to read file content\n");
