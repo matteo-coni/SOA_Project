@@ -199,5 +199,5 @@ const struct inode_operations onefilefs_inode_ops = {
 const struct file_operations onefilefs_file_operations = {
     .owner = THIS_MODULE,
     .read = onefilefs_read,
-    .write_iter = append_write_iter //please implement this function to complete the exercise
+    .write_iter = append_write_iter 
 };

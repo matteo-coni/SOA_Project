@@ -33,7 +33,7 @@ void do_switch_state(void){
         }
 
         while ((c = getchar()) != '\n' && c != EOF) {
-            //discard
+            //flush char
         }
     } 
     printf("Enter password: ");
@@ -83,7 +83,7 @@ void do_add_path(void){
                 break;
         }
     } while ((c = getchar()) != '\n' && c != EOF) {
-            // Discard characters
+            //flush characters
         }
     printf("Enter password: ");
     if (fgets(buffer_pwd, sizeof(buffer_pwd),stdin)!=NULL){
@@ -96,7 +96,7 @@ void do_add_path(void){
         return;
     }
 
-    //if((ret = syscall(174,&buffer_path,&buffer_pwd)) == 0){ //156 su 5.15, 174 su 4.15
+    
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0)
     if((ret = syscall(156,&buffer_path,&buffer_pwd)) == 0){ //156 su 5.15, 174 su 4.15
 #else
@@ -105,7 +105,6 @@ void do_add_path(void){
         printf("-- Adding of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute adding path! -- \n");
-        perror("\nErrore nella syscall _add_protected_paths"); //////PROVA
         perror("\nErrore nella syscall _add_protected_paths"); 
     }
 
@@ -158,7 +157,6 @@ void do_remove_path(void){
         printf("-- Removing of path %s executed successfully ! -- \n", buffer_path);
     } else {
         printf("-- Failed to execute removing path! -- \n");
-        perror("\nErrore nella syscall _rm_protected_paths"); //////PROVA
         perror("\nErrore nella syscall _rm_protected_paths");
     }
 }
@@ -193,7 +191,7 @@ void do_print_paths(void){
         printf("The existing paths are: \n %s",output);
     } else {
         printf("-- Failed to execute printing paths! -- \n");
-        perror("\nErrore nella syscall _print_paths"); //////PROVA
+        perror("\nErrore nella syscall _print_paths");
     }
 }
 void select_command(int cmd){
@@ -238,20 +236,14 @@ int main(int argc, char** argv){
                "-- 0 --> Exit                            ---\n");
         fgets(cmd_str, sizeof(cmd_str),stdin);
         cmd = strtol(cmd_str, &endptr, 10); //ok, endptr for error
-        /*if(scanf(" %c", &cmd_str) != 1 || !isdigit(cmd_str)){ //ok but not secure
-            printf("\nInvalid input - Please enter a single number (1-4)\n");
-            while(getchar()!= '\n');
-        } else {
-            cmd = atoi(&cmd_str);
-        }*/
         if (cmd == 0){
             printf("-- Exited successfully -- \n");
             break;
         }
         select_command(cmd);
-        //fai flush stdin per operazioni successive
+        //flush stdin per operazioni successive
     } while ((c = getchar()) != '\n' && c != EOF) {
-            // Discard characters
+            // flush characters
         }
     return 0;
 }
