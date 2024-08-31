@@ -45,6 +45,13 @@ There are four options:
 * 3 - **Remove path** from the protected paths list
 * 4 - **Print** protected paths list
 
+To execute the  'Switch state', 'Add new path' and 'Remove path' command you must enter the reference monitor password.
+Also, to execute the 'Add new path' and 'Remove path' command the reference monitor must be in REC_ON or ON state.
+
+In addition, there is a file called 'test_write.o' that try to open and write the string 'test' on the file '.../SOA_Project/reference-monitor/file_test.c'. Run it with
+```sh
+  sudo ./test_write.o
+  ```
 ### Actions blocked
 When the state of the reference monitor is ON or REC_ON, the following actions on the protected files come blocked by one of the new installed kretprobes:
 * **vfs_open_retprobe**: denies write access to protected files
@@ -54,4 +61,7 @@ When the state of the reference monitor is ON or REC_ON, the following actions o
 * **security_inode_link_retprobe**: blocks link generation of a protected file or link generation of a file in a protected directory
 * **security_inode_symlink_retprobe**: blocks sym_link generation of a protected file
 * **security_inode_unlink_retprobe**: blocks the remove of a protected file hard link
+
+Each kretprobe is associated with a handler for handling the call. If the file is in the protected list, the value 0 is returned and the post_handler is executed, where the collect_info() function is called.
+In this function, the information to be written to the log file is collected and the handler for 'deferred work' is placed in the appropriate queue.
 
