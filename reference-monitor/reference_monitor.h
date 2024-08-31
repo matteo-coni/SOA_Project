@@ -4,8 +4,8 @@
 #define PWD_LEN 32
 #define OUTPUT_BUFFER_SIZE (PATH_MAX * 512)
 #define MAX_PATH_LEN 256
-#define PATH_LOG_FILE "/home/matteo/Desktop/SOA_Project/singlefile-FS/mount/the-file"
-
+#define PATH_LOG_FILE "../singlefile-FS/mount/the-file"
+// /home/matteo/Desktop/SOA_Project/singlefile-FS/mount/the-file
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -22,6 +22,7 @@
 #include <linux/list.h>
 #include <linux/namei.h>
 #include <linux/kprobes.h>
+#include <linux/fs.h>
 
 #include "utils.h"
 
@@ -44,6 +45,7 @@ struct reference_monitor{
     char *password;                    /* Pwd for reconfiguration*/
     enum State state;                         /* State of ref_monitor: OFF(0) - ON(1) - REC-OFF(2) - REC-ON(3) */
     struct list_head protected_paths;
+    struct file *file_log;
     spinlock_t rf_lock;
 };
 

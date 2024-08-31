@@ -850,7 +850,6 @@ static int calculate_fingerprint(char* pathname, char* hash_out){
 void handler_def_work(struct work_struct *work_data){
     
     int ret;
-    struct file *file_log_output;
     char log_data[256];
 
     struct packed_work *pck_work = container_of(work_data, struct packed_work, work);
@@ -866,20 +865,10 @@ void handler_def_work(struct work_struct *work_data){
         return;
     }
 
-
-    file_log_output = filp_open(PATH_LOG_FILE, O_WRONLY | O_APPEND | O_CREAT, 0644);
-    if (IS_ERR(file_log_output)) {
-        int err = PTR_ERR(file_log_output);
-        printk("Error on opening log file: %d \n", err);
-        ret = err;
-    }
-
     //formattazione pre scrittura file
     snprintf(log_data, 256, "TGID: %d, TID: %d, UID: %u, EUID: %u, Exe_PATH: %s, HASH: %s\n", pck_work->info_log->tgid, pck_work->info_log->tid, pck_work->info_log->uid, pck_work->info_log->euid, pck_work->info_log->pathname, pck_work->info_log->hash_file_content);
 
-    ret = kernel_write(file_log_output, log_data, strlen(log_data), &file_log_output->f_pos);
-
-    filp_close(file_log_output, NULL);
+    ret = kernel_write(reference_monitor.file_log, log_data, strlen(log_data), &reference_monitor.file_log->f_pos);
 
     return;
 }
@@ -1081,6 +1070,14 @@ int init_module(void) {
 
     init_kretprobe(); //initialize the kretprobe for write
 
+    printk("PATH LOG FILE: %s", PATH_LOG_FILE);
+    reference_monitor.file_log = filp_open(PATH_LOG_FILE, O_RDWR | O_APPEND | O_CREAT, 0644);
+    if (IS_ERR(reference_monitor.file_log)) {
+        int err = PTR_ERR(reference_monitor.file_log);
+        printk("Error on opening log file: %d \n", err);
+        ret = err;
+    }
+
     printk(KERN_INFO "Reference monitor initialized successfully\n");
     
     return 0;
@@ -1109,6 +1106,10 @@ void cleanup_module(void) {
     unregister_kretprobe(&security_inode_symlink_retprobe);
     unregister_kretprobe(&security_inode_unlink_retprobe);
     printk(KERN_INFO "kretprobes unregistered\n");
+
+    if(likely(reference_monitor.file_log)) {
+        filp_close(reference_monitor.file_log, NULL);
+    }
 
     printk("%s: shutting down\n",MODNAME);
 

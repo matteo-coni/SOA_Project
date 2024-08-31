@@ -5,7 +5,7 @@
 
 int main() {
     int fd;
-    char *path = "/home/matteo/Desktop/SOA_Project/reference-monitor/file_test.c"; //
+    char *path = "reference-monitor/file_test.c"; //
 
     fd = open(path, O_WRONLY);
     if (fd == -1) {
