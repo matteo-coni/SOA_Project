@@ -197,6 +197,8 @@ asmlinkage long sys_add_protected_paths(char *path, char __user * password) {
     char* kernel_pwd;
     char* kernel_path;
     struct protected_paths_entry *entry_list;
+    struct path kern_path_str;
+    int check;
 
     /* check if user is root EUID 0 */
     if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)){ 
@@ -242,6 +244,12 @@ asmlinkage long sys_add_protected_paths(char *path, char __user * password) {
 		kfree(kernel_path);
 		return -EFAULT;
 	}
+
+    check = kern_path(kernel_path,LOOKUP_FOLLOW, &kern_path_str); //checking the path validity
+    if(check){
+        printk("%s: file or directory doesn't exists \n", MODNAME);
+        return -ENOMEM;
+    }
     
     if (file_in_protected_paths_list(kernel_path)){
         printk("%s: Path %s is already in protected_paths list\n", MODNAME, kernel_path);
