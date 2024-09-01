@@ -109,7 +109,7 @@ char* get_pwd_encrypted(const char *pwd) {
     }
     pwd_hash[hash_len * 2] = '\0'; // null terminator
 
-    printk(KERN_INFO "pwd encrypted = %s", pwd_hash);
+    //printk(KERN_INFO "pwd encrypted = %s", pwd_hash);
 
     return pwd_hash;
 }
