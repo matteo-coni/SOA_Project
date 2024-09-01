@@ -1074,7 +1074,7 @@ int init_module(void) {
     
     
     reference_monitor.password = pwd_encrypted;    
-    printk(KERN_INFO "pwd_encrypted ref monitor = %s\n", reference_monitor.password); //pwd ok
+    //printk(KERN_INFO "pwd_encrypted ref monitor = %s\n", reference_monitor.password); //pwd ok
 
     init_kretprobe(); //initialize the kretprobe for write
 
